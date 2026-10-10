@@ -1,0 +1,30 @@
+FanControl
+Copyright (c) 2026, 岁岁平安
+
+本软件包含来自以下第三方项目的代码与二进制组件，特此声明归属。
+（BSD 3-Clause 第 2 条要求二进制分发时必须附带这些声明。）
+
+================================================================================
+1. gpufan  —  https://github.com/shohart/gpufan
+   Copyright (c) 2026, shohart
+   许可证：BSD 3-Clause
+
+   本项目的 SMCSuperIO.kext（Nuvoton NCT679x 风扇写能力）与 gpufand
+   守护进程来自该项目。许可证全文见 THIRD-PARTY/gpufan-LICENSE。
+================================================================================
+2. VirtualSMC / SMCSuperIO  —  https://github.com/acidanthera/VirtualSMC
+   Copyright (c) 2018 vit9696
+   Copyright (c) 2018 joedm
+   许可证：BSD 3-Clause
+
+   gpufan 的 kext/src/NuvotonDevice.hpp 与 NuvotonDevice.cpp 派生自
+   SMCSuperIO。风扇控制支持是相对上游 VirtualSMC 1.3.8 的唯一新增部分，
+   完整差异见 gpufan 仓库中的 kext/nuvoton-fan-control.patch。
+================================================================================
+3. Linux kernel nct6775 driver
+
+   NCT679x 的寄存器映射参考了 Linux 内核的 nct6775 驱动。
+================================================================================
+
+FanControl 自身（界面程序 FanControl.app、特权辅助程序 fanctl、守护进程
+配置与构建/打包脚本）以 BSD 3-Clause 许可证发布，全文见 LICENSE。

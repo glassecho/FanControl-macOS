@@ -1,0 +1,11 @@
+# 构建产物
+build/
+helper/fanctl
+app/AppIcon.icns
+
+# 投稿用的内部材料（不进公开仓库）
+投稿/
+
+# macOS
+.DS_Store
+._*

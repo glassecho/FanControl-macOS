@@ -1,0 +1,174 @@
+#!/bin/zsh
+# fancontrol-check —— FanControl 兼容性自检
+#
+# 在新机器上装完 FanControl 后运行本脚本，它会告诉你这台机器能不能用、
+# 以及需要注意什么（尤其是水泵通道）。
+#
+#   zsh /usr/local/sbin/fancontrol-check
+#
+# 只读，不修改任何设置。
+emulate -L zsh
+setopt no_nomatch 2>/dev/null
+
+FANCTL=/usr/local/sbin/fanctl
+CONF=/usr/local/etc/fancontrol.conf
+PLIST=/Library/LaunchDaemons/com.shohart.gpufand.plist
+
+bold=$'\e[1m'; dim=$'\e[2m'; red=$'\e[31m'; grn=$'\e[32m'; ylw=$'\e[33m'; off=$'\e[0m'
+
+hdr() { print; print "${bold}$1${off}"; print "${dim}────────────────────────────────────────────────────────────${off}" }
+ok()  { print "  ${grn}✓${off} $1" }
+bad() { print "  ${red}✗${off} $1" }
+warn(){ print "  ${ylw}!${off} $1" }
+inf() { print "    $1" }
+
+PROBLEMS=0
+
+# ---------------------------------------------------------------- 系统
+hdr "1. 系统"
+OSVER=$(sw_vers -productVersion 2>/dev/null)
+OSBUILD=$(sw_vers -buildVersion 2>/dev/null)
+ARCH=$(uname -m)
+MODEL=$(sysctl -n hw.model 2>/dev/null)
+CPU=$(sysctl -n machdep.cpu.brand_string 2>/dev/null)
+inf "macOS      : ${OSVER:-未知} (${OSBUILD:-?})"
+inf "架构       : ${ARCH}"
+inf "机型       : ${MODEL:-未知}"
+inf "CPU        : ${CPU:-未知}"
+
+case "$OSVER" in
+  1[1-9].*|2[0-9].*) ok "macOS 版本满足要求（>= 11，第三方 kext 需走 OpenCore 注入）" ;;
+  *) bad "macOS 版本过低（$OSVER），需要 macOS 11 或更高"; PROBLEMS=$((PROBLEMS+1)) ;;
+esac
+
+# 是否 Hackintosh：看有没有 OpenCore 相关痕迹
+HACKI=0
+if [ -n "$(nvram -p 2>/dev/null | grep -i 'opencore\|OpenCore')" ]; then HACKI=1; fi
+if [ -e /System/Library/CoreServices/OpenCore.efi ]; then HACKI=1; fi
+BOOTARGS=$(nvram -p 2>/dev/null | awk '$1=="boot-args"{ $1=""; print }' | tr -d '\t')
+if [ -n "$BOOTARGS" ]; then HACKI=1; fi
+if [ "$HACKI" = 1 ]; then
+  ok "看起来是 Hackintosh（检测到 OpenCore / 自定义 boot-args）→ 可以注入第三方 kext"
+  [ -n "$BOOTARGS" ] && inf "boot-args  : $BOOTARGS"
+else
+  warn "没检测到 OpenCore 痕迹 —— 如果是真 Mac，本方案不适用"
+  inf "（真 Mac 无法注入第三方 kext；不过真 Mac 一般可以用 Macs Fan Control 之类）"
+fi
+
+# ---------------------------------------------------------------- 硬件
+hdr "2. 主板 Super I/O 芯片"
+CHIPNAME=$(ioreg -l -w0 2>/dev/null | sed -n 's/.*"ChipName"[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+if [ -n "$CHIPNAME" ]; then
+  inf "芯片       : $CHIPNAME"
+  case "$CHIPNAME" in
+    Nuvoton\ NCT679*|Nuvoton\ NCT6779D)
+      ok "在 gpufan 补丁的支持白名单内（Nuvoton NCT679x）" ;;
+    Nuvoton*|Winbond*)
+      bad "$CHIPNAME 不受支持 —— 补丁只对 Nuvoton NCT6790D/NCT6791D/.../NCT6798D 和 NCT6779D 生效"
+      PROBLEMS=$((PROBLEMS+1)) ;;
+    ITE*)
+      warn "$CHIPNAME：SMCSuperIO 官方本来就支持 ITE 芯片的读写，但 gpufan 的补丁是针对 Nuvoton 写的"
+      inf "ITE 芯片可以试试原版 SMCSuperIO（不需要本补丁），但能否调速需实测"
+      PROBLEMS=$((PROBLEMS+1)) ;;
+    *) warn "未知芯片 $CHIPNAME，需要实测"; PROBLEMS=$((PROBLEMS+1)) ;;
+  esac
+else
+  warn "读不到 ChipName —— 说明 SMCSuperIO.kext 没有加载（或没有 Super I/O 芯片）"
+  inf "读取办法：ioreg -l -w0 | grep ChipName"
+  PROBLEMS=$((PROBLEMS+1))
+fi
+
+# ---------------------------------------------------------------- kext
+hdr "3. SMCSuperIO kext（必须带 Nuvoton 写能力）"
+if kmutil showloaded 2>/dev/null | grep -qi "ru.joedm.SMCSuperIO"; then
+  SMCSIO=$(kmutil showloaded 2>/dev/null | grep -i "ru.joedm.SMCSuperIO")
+  ok "已加载：$SMCSIO"
+else
+  warn "kmutil 没看到 SMCSuperIO（Hackintosh 的 OpenCore 注入有时不在这里列出，以下面 SMC 键为准）"
+fi
+
+# 真正说明问题的是 SMC 里有没有 F<n>Md / F<n>Tg
+if [ -x "$FANCTL" ]; then
+  if $FANCTL read 2>/dev/null | grep -q '"controllable":true'; then
+    ok "SMC 里存在可写的 F<n>Md / F<n>Tg 键 → 风扇调速能力已就绪"
+  else
+    bad "SMC 里没有可写的 F<n>Md / F<n>Tg 键 → 无法调速"
+    inf "原因通常是：① 带写能力的 SMCSuperIO.kext 没放进 EFI/OC/Kexts 并注册；"
+    inf "            ② 芯片不在白名单；③ kext 顺序不对（SMCSuperIO 必须在 VirtualSMC 之后）"
+    PROBLEMS=$((PROBLEMS+1))
+  fi
+else
+  bad "$FANCTL 不存在，安装似乎不完整"
+  PROBLEMS=$((PROBLEMS+1))
+fi
+
+# ---------------------------------------------------------------- 风扇
+hdr "4. 风扇通道"
+if [ -x "$FANCTL" ]; then
+  $FANCTL read 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("    (读取失败)"); raise SystemExit
+pc = d.get("pumpChannel", -1)
+pconf = d.get("pumpConfigured", False)
+print("    水泵通道设定: ch%d%s" % (pc, "" if pconf else "  <-- 用的是内置默认值，未从配置读到"))
+print()
+print("    %-4s %-10s %8s %8s %8s" % ("ch", "名字", "转速RPM", "占空比", "模式"))
+for f in d["fans"]:
+    mode = {0: "BIOS", 1: "手动·转速", 2: "手动·占空比"}.get(int(f["mode"]), "?")
+    mark = "  <= 水泵(已锁)" if f["ch"] == pc else ""
+    print("    %-4d %-10s %8.0f %7.1f%% %8s%s" % (f["ch"], f["name"], f["rpm"], f["duty"], mode, mark))
+'
+  PUMPCONF=$($FANCTL read 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("pumpConfigured", False))' 2>/dev/null)
+
+  print
+  if [ "$PUMPCONF" = "True" ]; then
+    ok "水泵通道已从 $CONF 读到（已确认过）"
+  else
+    warn "水泵通道用的是内置默认值，未从配置读到 —— 换过机器请务必确认"
+    print
+    inf "${bold}如何确认水泵通道（只读办法，安全）：${off}"
+    inf "  ① 泵的转速明显偏高且几乎恒定，不随 CPU 温度变化。"
+    inf "     本机是 ch6 / AUXFAN4 ≈ 2800 RPM，而三个机箱/CPU 风扇都在 400–900。"
+    inf "  ② 让机器空载静置几分钟，同时反复刷新转速；"
+    inf "     转速几乎不动的那一路最可疑。"
+    inf "  ③ 交叉验证：运行一个 CPU 烤机负载，转速跟着涨的是风扇，纹丝不动的是泵。"
+    inf "  ${ylw}不要${off}用 gpufan scan —— 它会把每个通道都拉到 100% 再降到 0%，包括水泵。"
+    inf "  实在拿不准，就宁可把可疑通道排除在调速范围之外（不要勾选它）。"
+    inf
+    inf "  确认后写进配置："
+    inf "    sudo sh -c 'echo pump_channel = <通道号> >> $CONF'"
+    inf "    sudo launchctl kickstart -k system/com.shohart.gpufand"
+  fi
+else
+  inf "(跳过)"
+fi
+
+# ---------------------------------------------------------------- 后台服务
+hdr "5. 后台服务"
+if [ -f "$PLIST" ]; then
+  ok "LaunchDaemon 已安装（开机自启，RunAtLoad=true）"
+  if launchctl print system/com.shohart.gpufand >/dev/null 2>&1; then
+    STATE=$(launchctl print system/com.shohart.gpufand 2>/dev/null | awk -F'= ' '/state =/{print $2; exit}')
+    ok "当前状态：${STATE:-未知}"
+  else
+    warn "当前未加载（会在下次开机时自动加载，或在应用里点「应用」）"
+  fi
+else
+  warn "未安装 LaunchDaemon"
+fi
+[ -f "$CONF" ] && inf "配置       : $CONF" || inf "配置       : (无)"
+
+# ---------------------------------------------------------------- 结论
+hdr "结论"
+if [ "$PROBLEMS" = 0 ]; then
+  print "  ${grn}${bold}这台机器可以直接用。${off}"
+  print "  打开 /Applications/FanControl.app 即可。"
+else
+  print "  ${ylw}${bold}有 $PROBLEMS 项需要处理（见上面的 ✗ / !）。${off}"
+  print "  最常见的是第 3 节：EFI 里还没有带写能力的 SMCSuperIO.kext。"
+fi
+print
+print "${dim}提示：本脚本只读，不会改动任何设置。${off}"
