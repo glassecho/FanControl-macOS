@@ -19,9 +19,9 @@
 
 | 文件 | 给谁用 |
 |---|---|
-| **`FanControl-1.5.0.dmg`** | **普通用户装这个** —— 双击即可 |
-| `FanControl-1.5.0.pkg` | 同上，也可以用命令行装 |
-| `FanControl-1.5.0-src.zip` | 想自己编译的人 |
+| **`FanControl-1.5.1.dmg`** | **普通用户装这个** —— 双击即可 |
+| `FanControl-1.5.1.pkg` | 同上，也可以用命令行装 |
+| `FanControl-1.5.1-src.zip` | 想自己编译的人 |
 
 > ⚠️ 本软件**没有 Apple 开发者签名**（作者没有证书），Gatekeeper 会拦。
 > 右键点安装包 → **打开** → 再点一次「打开」即可；
@@ -50,6 +50,14 @@
 ---
 
 ## 这个版本有什么
+
+### 1.5.1
+
+- **修了一个「开机自启后主窗口打不开」的 bug** —— 开机（登录项）启动时主窗口有时
+  压根没被创建，点菜单栏图标、点「打开主窗口」全都没反应。现在会自动重建，
+  菜单栏「文件 → 打开主窗口」（⌘N）也能找回来。
+- 顺带加固了窗口管理：认领窗口不再依赖固定 3 秒轮询（漏掉会让红叉**真正关掉**窗口，
+  此后再也打不开），窗口识别也不再绑死在界面文案上。
 
 ### 1.5.0
 
@@ -114,7 +122,7 @@ zsh /usr/local/sbin/fancontrol-check
 
 ```sh
 # 安装包
-sudo installer -pkg FanControl-1.5.0.pkg -target /
+sudo installer -pkg FanControl-1.5.1.pkg -target /
 
 # 或者从源码
 zsh build.sh          # 需要 Xcode Command Line Tools
@@ -300,7 +308,7 @@ System Settings → Privacy & Security and click **Open Anyway**.
 ## Install
 
 ```sh
-sudo installer -pkg FanControl-1.5.0.pkg -target /
+sudo installer -pkg FanControl-1.5.1.pkg -target /
 ```
 
 Then run the self-check to confirm your chip is supported:

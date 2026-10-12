@@ -246,6 +246,9 @@ code{background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px}
   <li><b>1.5.0 新增</b>：界面支持<b>中英双语</b>，跟随系统语言自动切换 ——
       英文系统上第一次打开就是英文，不需要任何设置项；
       Finder / 程序坞里的 <b>app 名字</b>也跟着变。</li>
+  <li><b>1.5.1 修复</b>：<b>开机自启后主窗口打不开</b> ——
+      开机（登录项）启动时主窗口有时没被创建，点菜单栏图标、点「打开主窗口」
+      都没反应。现在会自动重建；菜单栏「文件 → 打开主窗口」（⌘N）也能找回来。</li>
 </ul>
 <p>Since 1.5.0 the UI is <b>bilingual (English / Simplified Chinese)</b> and follows your system
 language automatically — there is no setting to change. See <code>PORTING.md</code> for the English
