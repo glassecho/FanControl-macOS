@@ -216,6 +216,48 @@ echo "== 3) pkgbuild =="
   --install-location / \
   "$PKGDIR/FanControl-component.pkg"
 
+# ── 3b) 剥掉 PackageInfo 里的 <relocate> 声明 ──────────────────────────────
+# ⚠️ 这一步不能省，否则用户装完会「提示成功但 /Applications 里什么都没有」。
+#
+# pkgbuild 只要在 payload 里看到 .app，就会自动写上这么一段：
+#
+#     <relocate>
+#         <bundle id="local.hackintosh.FanControl"/>
+#     </relocate>
+#
+# 它等于在告诉 macOS 安装器：「这个 app 是可重定位的 —— 装的时候先在磁盘上
+# 搜有没有同 bundle ID 的副本，找到就装到那个位置去，不要装 /Applications」。
+#
+# 于是只要机器上任何地方躺着一份 FanControl.app —— 比如本仓库 build/ 里刚
+# 编译出来的那份、或者 make-pkg.sh 自己留下的 payload/ —— 用户双击 pkg 装完
+# 会看到「安装成功」，但 /Applications/FanControl.app 根本不存在，东西被塞进
+# 了那个副本的位置。
+#
+# 2026-10-12 实测踩到，install.log 里写得很直白：
+#   PackageKit: Applications/FanControl.app relocated to
+#               .../FanControl/build/pkg/payload/Applications/FanControl.app
+#
+# pkgbuild 没有关掉它的开关（--help 里没有任何 relocate 相关选项），
+# 只能展开 PackageInfo、删掉这一段、再压回去。
+COMP="$PKGDIR/FanControl-component.pkg"
+EXPAND="$PKGDIR/.component-expand"
+/bin/rm -rf "$EXPAND"
+/usr/sbin/pkgutil --expand "$COMP" "$EXPAND"
+if /usr/bin/grep -q "<relocate>" "$EXPAND/PackageInfo"; then
+  /usr/bin/awk '
+    /<relocate>/   { skip=1 }
+    !skip          { print }
+    /<\/relocate>/ { skip=0 }
+  ' "$EXPAND/PackageInfo" > "$EXPAND/PackageInfo.new"
+  /bin/mv "$EXPAND/PackageInfo.new" "$EXPAND/PackageInfo"
+  /bin/rm -f "$COMP"
+  /usr/sbin/pkgutil --flatten "$EXPAND" "$COMP"
+  echo "   ✓ 已移除 <relocate>（否则安装器会把 app 装到磁盘上任何同 bundle ID 的副本里）"
+else
+  echo "   （PackageInfo 里没有 <relocate>，无需处理）"
+fi
+/bin/rm -rf "$EXPAND"
+
 echo "== 4) 组装最终安装包 =="
 /bin/mkdir -p "$PKGDIR/resources"
 cat > "$PKGDIR/resources/welcome.html" <<HTML
@@ -457,4 +499,14 @@ TXT
 
 echo "== 7) 产物 =="
 ls -lh "$OUT" "$HERE/build/pkg/FanControl-$VERSION.dmg"
+
+# ── 8) 清理 staging 目录 ────────────────────────────────────────────────
+# $PAYLOAD 里有一份完整的 FanControl.app，bundle ID 与正式安装的完全一样。
+# 即使上面已经剥掉了 <relocate>，留着它也会被 LaunchServices 注册成一个
+# 「同 ID 的 app」—— 将来任何一次 pkg 安装、或系统的其它判定，都可能被它带偏。
+# 它纯粹是 pkgbuild 的中间产物，删掉不影响任何产物（pkg / dmg 都已生成）。
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREG" -u "$PAYLOAD/Applications/FanControl.app" 2>/dev/null || true
+/bin/rm -rf "$PAYLOAD"
+
 echo "OK: $HERE/build/pkg/FanControl-$VERSION.dmg"
