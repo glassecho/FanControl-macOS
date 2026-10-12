@@ -207,7 +207,8 @@ THIRD-PARTY/    gpufan 的许可证原文
 
 ## Roadmap
 
-- **英文界面** —— 目前界面文案是硬编码中文，计划做完整 i18n（跟随系统语言）。
+- **[英文界面](https://github.com/glassecho/FanControl-macOS/issues/1)** —— 目前界面文案是硬编码中文（175 条），
+  计划做完整 i18n（跟随系统语言）。**欢迎认领**，issue 里写了全部实现要点。
 - 更多 Super I/O 芯片的支持（目前只做 Nuvoton NCT679x / NCT6779D）。
 - 更细的曲线编辑器（多段、可导入导出）。
 
@@ -245,7 +246,7 @@ VirtualSMC's SMCSuperIO. Six modes (silent / standard / performance / full / man
 plus read-only system and GPU monitoring and a menu-bar readout.
 
 > **The GUI and documentation are in Chinese.** English UI is on the roadmap —
-> English README contributions are very welcome.
+> see [#1](https://github.com/glassecho/FanControl-macOS/issues/1). English contributions are very welcome.
 
 ## The problem
 
@@ -310,6 +311,14 @@ Installing a kext into your EFI is a physical prerequisite for controlling mothe
 hackintosh. There is no way around it — the fan keys simply do not exist in SMC until SMCSuperIO
 publishes them. If a tool claims to control motherboard fans on a hackintosh without touching the EFI,
 it is either reading the GPU or it isn't working.
+
+## Roadmap
+
+- **English UI** — tracked in [#1](https://github.com/glassecho/FanControl-macOS/issues/1). The interface
+  text is hardcoded Chinese today (175 strings); full i18n following the system language is planned.
+  Contributions welcome — the issue lists every implementation detail.
+- Support for more Super I/O chips (currently Nuvoton NCT679x / NCT6779D only).
+- A finer curve editor (multi-segment, import/export).
 
 ## Credits
 
