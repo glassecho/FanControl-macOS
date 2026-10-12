@@ -11,8 +11,15 @@
 #   · postinstall 脚本会按"当前登录的图形账号"写 sudoers 免密规则。
 set -e
 HERE=${0:A:h}
-VERSION=1.2.0
 IDENT=local.hackintosh.fancontrol
+
+# 版本号的唯一来源是 app/Info.plist 的 CFBundleShortVersionString。
+# 以前这里、Info.plist、Model.swift 三处各写一遍，改漏一处版本号就会不一致。
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$HERE/app/Info.plist")
+if [ -z "$VERSION" ]; then
+  echo "错误：无法从 app/Info.plist 读取 CFBundleShortVersionString"; exit 1
+fi
+echo "== 版本号（读自 Info.plist）: $VERSION =="
 
 PKGDIR=$HERE/build/pkg
 PAYLOAD=$PKGDIR/payload
@@ -50,10 +57,6 @@ echo "== 1) 准备 payload =="
 /usr/bin/ditto "$KEXT"                                  "$PAYLOAD$SHARE/SMCSuperIO.kext"
 /usr/bin/ditto "$HERE/移植说明.md"                       "$PAYLOAD$SHARE/移植说明.md"
 /usr/bin/ditto "$HERE/uninstall.sh"                     "$PAYLOAD$SHARE/uninstall.sh"
-# BSD 3-Clause 第 2 条：二进制分发必须附带版权声明与免责声明
-/usr/bin/ditto "$HERE/LICENSE"                          "$PAYLOAD$SHARE/LICENSE"
-/usr/bin/ditto "$HERE/NOTICE"                           "$PAYLOAD$SHARE/NOTICE"
-/usr/bin/ditto "$HERE/THIRD-PARTY"                      "$PAYLOAD$SHARE/THIRD-PARTY"
 /bin/chmod 755 "$PAYLOAD/usr/local/sbin/fanctl" \
                "$PAYLOAD/usr/local/sbin/fancontrol-check" \
                "$PAYLOAD$SHARE/uninstall.sh"
@@ -214,7 +217,7 @@ echo "== 3) pkgbuild =="
 
 echo "== 4) 组装最终安装包 =="
 /bin/mkdir -p "$PKGDIR/resources"
-cat > "$PKGDIR/resources/welcome.html" <<'HTML'
+cat > "$PKGDIR/resources/welcome.html" <<HTML
 <html><head><meta charset="utf-8"><style>
 body{font:13px -apple-system,sans-serif;color:#ddd;background:transparent;margin:0}
 h2{font-size:15px;margin:0 0 8px}
@@ -222,16 +225,23 @@ ul{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
 code{background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px}
 .warn{color:#ffb340}
 </style></head><body>
-<h2>FanControl 1.2.0</h2>
+<h2>FanControl $VERSION</h2>
 <p>在 macOS 下控制主板风扇转速：安静 / 标准 / 性能 / 全速 / 手动 / 自定义曲线。</p>
 <ul>
   <li>适用：<b>Intel Hackintosh</b> + 主板 Super I/O 为 <b>Nuvoton NCT679x</b></li>
   <li>本包会安装界面程序、特权辅助程序、温度曲线守护进程，并配置免密规则</li>
   <li>安装后会附带带 Nuvoton 写能力的 <code>SMCSuperIO.kext</code>，
       需要你手动放进 EFI/OC/Kexts 并重启</li>
-  <li><b>本版新增</b>：显卡监控 —— 风扇转速 / 温度 / 功耗 / 核心与显存频率 / 占用率
-      （<b>只读</b>；显卡风扇由显卡固件管理，本程序不参与显卡调速）</li>
-  <li>许可证：BSD 3-Clause。含第三方组件声明，见包内 <code>LICENSE</code> 与 <code>NOTICE</code></li>
+  <li><b>1.2 新增</b>：显卡监控 —— 风扇转速 / 温度 / 功耗 / 频率 / 占用率
+      （只读；显卡风扇由显卡固件管理，本程序不参与显卡调速）</li>
+  <li><b>1.3 新增</b>：「监控」页 —— CPU 总占用与 32 个核心、内存、磁盘各卷、
+      网络上下行、进程占用排行、传感器温度、系统信息。
+      每个面板都能单独开关，开关会记住。</li>
+  <li><b>1.4 新增</b>：菜单栏常驻显示 —— 可任选「CPU/GPU 温度、占用、内存、
+      风扇转速、网络」中的几项显示在菜单栏上（每项各自带图标），
+      点图标弹出面板可随时增删；同时换了应用图标。</li>
+  <li><b>1.4.1 新增</b>：菜单栏面板里可直接开关<b>「开机自启」</b>，
+      不用再去系统设置里手动加登录项。</li>
 </ul>
 <p class="warn">⚠ 换过机器的话，装完请务必运行
 <code>zsh /usr/local/sbin/fancontrol-check</code> 确认水泵通道。</p>
@@ -293,12 +303,9 @@ DMGROOT=$PKGDIR/dmg
 /bin/mkdir -p "$DMGROOT"
 /usr/bin/ditto "$OUT" "$DMGROOT/FanControl-$VERSION.pkg"
 /usr/bin/ditto "$HERE/移植说明.md" "$DMGROOT/移植说明.md"
-/usr/bin/ditto "$HERE/LICENSE" "$DMGROOT/LICENSE"
-/usr/bin/ditto "$HERE/NOTICE" "$DMGROOT/NOTICE"
-/usr/bin/ditto "$HERE/THIRD-PARTY" "$DMGROOT/THIRD-PARTY"
 
-cat > "$DMGROOT/先读我.txt" <<'TXT'
-FanControl 1.2.0 —— 在 macOS 下控制主板风扇转速
+cat > "$DMGROOT/先读我.txt" <<TXT
+FanControl $VERSION —— 在 macOS 下控制主板风扇转速
 =================================================
 
 【这个包是给什么机器用的】
@@ -315,13 +322,13 @@ FanControl 1.2.0 —— 在 macOS 下控制主板风扇转速
 
 【安装】
 
-  双击 FanControl-1.2.0.pkg
+  双击 FanControl-$VERSION.pkg
 
   本包没有 Apple 开发者签名。如果提示"无法打开，因为来自身份不明的开发者"：
     · 右键点安装包 → 打开 → 再点"打开"，或
     · 系统设置 → 隐私与安全性 → 拉到底点"仍要打开"，或
     · 直接在终端里装：
-        sudo installer -pkg FanControl-1.2.0.pkg -target /
+        sudo installer -pkg FanControl-$VERSION.pkg -target /
 
 
 【装完必须做的两件事】
@@ -353,34 +360,71 @@ FanControl 1.2.0 —— 在 macOS 下控制主板风扇转速
 【关于开机自启】
 
   · 温度曲线守护进程 gpufand 是开机自启的 —— 你选的模式重启后会自动恢复。
-  · 界面程序不自启，也不需要：调速由守护进程在做，界面只在改设置时打开。
+  · 界面程序：1.4.1 起可在菜单栏面板里打开「开机自启」开关
+    （走系统登录项机制，也能在「系统设置 → 通用 → 登录项」里关掉）。
+    开机后会自动打开主窗口，关掉即可，菜单栏图标会一直留着。
+    不需要的话就别开 —— 调速本身是 gpufand 在做。
 
 
-【显卡监控（只读）】
+【显卡风扇（1.2 新增，只读）】
 
-  主界面下方的「显卡」卡片显示显卡的风扇转速、温度、功耗、
-  核心频率、显存频率、占用率。
+  监控页的「显卡」面板显示显卡的风扇转速、温度、功耗、频率、占用率。
 
   ⚠ 显卡风扇只能看，不能调：
      · 它由显卡固件的 PowerPlay 表 + 显卡驱动共同管理，macOS 没有开放的写入接口
      · 要改它，只能在 OpenCore 的 DeviceProperties 里注入修改过的
        PP_PhmSoftPowerPlayTable（重启生效，只影响 macOS）
-     · 无驱动的显卡（例如 macOS 下的 NVIDIA 30 系）不显示这张卡片
-
-  查原始数据（只读，不需要 root）：
-      /usr/local/sbin/fanctl gpu
+     · 无驱动的显卡（例如 macOS 下的 NVIDIA 30 系）不显示这个面板
 
 
-【许可证】
+【监控页（1.3 新增）】
 
-  本程序以 BSD 3-Clause 许可证发布，见同目录 LICENSE。
+  左栏顶部有「控制 / 监控」两个页签。监控页上有 8 个面板：
 
-  其中包含来自 gpufan（Copyright (c) 2026, shohart）的
-  SMCSuperIO.kext 与 gpufand 守护进程，以及派生自
-  VirtualSMC / SMCSuperIO（Copyright (c) 2018 vit9696 / joedm）的代码。
-  完整第三方声明见同目录 NOTICE 与 THIRD-PARTY/。
+    CPU        总占用、用户/系统占比、负载、CPU 走势、32 个核心各自的占用
+    显卡       风扇转速 / 温度 / 功耗 / 频率 / 占用率（只读）
+    内存       已用/总量、联动、压缩、交换
+    存储       各个卷的已用空间
+    网络       上下行速率（按 2 秒轮询间隔计算）
+    进程       占用 CPU 最高的 10 个进程
+    传感器     CPU 8 个核心 + GPU 的温度（来自 SMC）
+    系统       处理器型号、逻辑核心数、运行时间、负载
 
-  本项目与上述上游项目的作者无关，也未获得其背书。
+  每个面板都能在左栏「显示面板」里单独开关，开关会记住，下次打开保持原样。
+  也可以点「全部显示 / 全部隐藏」一键切换。
+
+  这些数据全是只读采样，不写任何东西、也不需要额外权限。
+
+
+【菜单栏显示（1.4 新增）】
+
+  程序运行期间会在菜单栏右侧常驻。默认显示「风扇图标 + CPU 温度 + GPU 温度」。
+
+  点一下它就弹出面板，里面有：
+    · 上半部分：8 项实时数据（CPU/GPU 温度、占用、内存、风扇、显卡、上下行）
+    · 下半部分「菜单栏显示」：8 个开关，想显示哪几项就打开哪几项
+
+  可以显示的项目：
+    风扇图标     只显示一个图标，不带数字
+    CPU 温度     CPU 最热核心的温度
+    GPU 温度     显卡温度
+    CPU 占用     总占用率
+    内存         已用比例
+    风扇转速     受控风扇里转得最快的那个（不含水泵）
+    显卡风扇     显卡自身风扇转速
+    网络         下行速率
+
+  开关会记住，下次启动保持原样。菜单栏上每一项都带自己的图标，方便区分。
+
+  面板底部还有三个按钮：打开主窗口 / 立即刷新 / 退出程序。
+
+  ⚠ 关掉主窗口不等于退出程序 —— 菜单栏图标还在，点它就能把窗口叫回来。
+     要真正退出，用面板上的电源按钮，或按 ⌘Q。
+
+  ⚠ 8 项全部关掉时，菜单栏会保留一个风扇图标 ——
+     否则菜单栏就点不到了，设置也再也打不开。
+
+  ⚠ 菜单栏显示用的是只读数据，不影响调速，也不需要额外权限。
 TXT
 
 /bin/rm -f "$HERE/build/pkg/FanControl-$VERSION.dmg"

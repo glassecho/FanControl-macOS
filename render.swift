@@ -5,6 +5,11 @@
 //     -framework SwiftUI -framework AppKit -framework Foundation
 //
 // 用 FANCTL_PATH 指向未安装的新版 helper 就能预览新字段。
+//
+// ⚠️ 输出文件名不要随便改。
+// preview/ 里的 01–04 已经发到 GitHub，并被贴吧 / 各平台的帖子用
+// `cdn.jsdelivr.net/gh/<user>/FanControl-macOS@main/preview/xx.png` 引用过。
+// 改名字 = 那些帖子里的图全部变成裂图。要加新图只能往后编号。
 import SwiftUI
 import AppKit
 
@@ -25,6 +30,19 @@ func shoot<V: View>(_ v: V, _ dir: String, _ name: String, w: CGFloat, h: CGFloa
     return true
 }
 
+/// 让截图里的手动模式看起来「有人在用」：勾上所有可控通道，各给一个不同的占空比。
+@MainActor
+func populateManual(_ ctl: FanController) {
+    guard let s = ctl.snapshot else { return }
+    let pump = s.pumpChannel
+    let adjustable = s.fans.filter { $0.ch != pump && $0.controllable }
+    ctl.selectedFans = Set(adjustable.map { $0.ch })
+    let presets: [Double] = [35, 45, 55, 60, 40, 50, 30, 65]
+    var d: [Int: Double] = [:]
+    for (i, f) in adjustable.enumerated() { d[f.ch] = presets[i % presets.count] }
+    ctl.manualDuty = d
+}
+
 @main
 struct RenderMain {
     @MainActor static func main() {
@@ -33,37 +51,92 @@ struct RenderMain {
 
         let ctl = FanController()
 
-        // 等一次 refresh() 回填（1.2 只有 `fanctl read`，很快）
-        RunLoop.main.run(until: Date().addingTimeInterval(2.0))
+        // 等后台 refresh()（read + sys，后者有 400ms 采样窗口）回填到主线程
+        RunLoop.main.run(until: Date().addingTimeInterval(3.5))
 
         if let s = ctl.snapshot {
             FileHandle.standardError.write("风扇 \(s.fans.count) 个，传感器 \(s.sensors.count) 个\n".data(using: .utf8)!)
         } else {
             FileHandle.standardError.write("警告：未取到风扇状态\n".data(using: .utf8)!)
         }
-        if ctl.gpu == nil {
-            FileHandle.standardError.write("提示：没有显卡监控数据（无驱动的显卡不显示显卡卡）\n".data(using: .utf8)!)
+        if let sy = ctl.sys {
+            FileHandle.standardError.write("CPU \(sy.cpu.cores) 核 \(sy.cpu.total)%，进程 \(sy.procs.count) 条，卷 \(sy.disk.count) 个\n".data(using: .utf8)!)
+        } else {
+            FileHandle.standardError.write("警告：未取到系统监控数据\n".data(using: .utf8)!)
         }
 
         let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp"
         print("渲染到 \(outDir)：")
 
-        // 标准曲线模式（默认）
+        // ── 01–04：名字沿用仓库里已有的，覆盖更新成 1.4.1 界面 ──────────────
+        // 已发出去的 jsDelivr 链接走 @main 分支，重推后会自动跟着变新。
+
         ctl.mode = .standard
         ctl.minDuty = ControlMode.standard.minDuty
         shoot(ContentView(ctl: ctl), outDir, "01-control-standard.png", w: 1160, h: 870)
 
-        // 手动模式：每个风扇一个固定占空比滑块
         ctl.mode = .manual
+        ctl.minDuty = ControlMode.manual.minDuty
+        populateManual(ctl)
         shoot(ContentView(ctl: ctl), outDir, "02-control-manual.png", w: 1160, h: 870)
 
-        // 自定义曲线：可拖动的控制点
         ctl.mode = .custom
+        ctl.minDuty = ControlMode.custom.minDuty
         shoot(ContentView(ctl: ctl), outDir, "03-control-custom-curve.png", w: 1160, h: 870)
 
-        // 说明面板（标题栏 ? 里弹出的那张）
         ctl.mode = .standard
-        shoot(ContentView(ctl: ctl).helpCard.padding(14).background(Theme.bg),
-              outDir, "04-help-panel.png", w: 458, h: 400)
+        ctl.minDuty = ControlMode.standard.minDuty
+        shoot(ContentView(ctl: ctl).helpCard.padding(16).background(Theme.bg),
+              outDir, "04-help-panel.png", w: 470, h: 398)
+
+        // ── 05–08：1.4.1 新增的截图 ──────────────────────────────────────
+
+        shoot(ContentView(ctl: ctl, startPage: 1, scrollMonitor: false),
+              outDir, "05-monitor.png", w: 1160, h: 870)
+
+        ctl.enabledPanels = Set(PanelKind.allCases)
+        shoot(MonitorPanels(ctl: ctl).padding(14).background(Theme.bg),
+              outDir, "06-monitor-panels.png", w: 880, h: 820)
+
+        // 菜单栏弹出面板（点状态栏图标出来的那个）
+        // 1.4.1 起底部多了「开机自启」一行，高度从 540 提到 620
+        shoot(MenuBarPanel(ctl: ctl), outDir, "07-menubar-panel.png", w: 326, h: 620)
+
+        // 菜单栏上那一条长什么样 —— 用同一套零件离屏模拟
+        // （真正的状态栏由 AppKit 的 NSStatusItem 画，渲染器抓不到）
+        shoot(StatusBarPreview(ctl: ctl), outDir, "08-menubar-look.png", w: 420, h: 30)
+    }
+}
+
+/// 模拟系统菜单栏外观，用来预览「多个项目各自带图标 + 数值」的排版效果。
+/// 真机上由 StatusItemController 用 attributedTitle 画在 NSStatusItem 上。
+struct StatusBarPreview: View {
+    @ObservedObject var ctl: FanController
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(spacing: 14) {
+                if ctl.menuBarItemList.isEmpty {
+                    Image(systemName: "fanblades.fill")
+                } else {
+                    ForEach(ctl.menuBarItemList) { item in
+                        HStack(spacing: 3) {
+                            Image(systemName: item.symbol)
+                            if let t = menuBarText(ctl, item) { Text(t) }
+                        }
+                    }
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(colors: [Color(red: 0.30, green: 0.28, blue: 0.40),
+                                    Color(red: 0.22, green: 0.24, blue: 0.36)],
+                           startPoint: .leading, endPoint: .trailing))
     }
 }

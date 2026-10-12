@@ -50,7 +50,7 @@ for a in "${ARCHS[@]}"; do
     -target "$a-apple-macos13.0" \
     -sdk "$SDK" \
     -o "$OUT/FanControl-$a" \
-    "$APP/App.swift" "$APP/Model.swift" "$APP/Views.swift" \
+    "$APP/App.swift" "$APP/Model.swift" "$APP/Views.swift" "$APP/StatusItem.swift" \
     -framework SwiftUI -framework AppKit -framework Foundation
   SLICES+=("$OUT/FanControl-$a")
 done
@@ -75,10 +75,6 @@ cp "$APP/AppIcon.icns" "$BUNDLE/Contents/Resources/AppIcon.icns"
 
 cp "$HELPER/fanctl" "$BUNDLE/Contents/Resources/fanctl"
 cp "$HELPER/fancontrol-check" "$BUNDLE/Contents/Resources/fancontrol-check"
-
-# 许可证：BSD 3-Clause 要求二进制分发附带版权声明与免责声明
-cp "$HERE/LICENSE" "$BUNDLE/Contents/Resources/LICENSE"
-cp "$HERE/NOTICE"  "$BUNDLE/Contents/Resources/NOTICE"
 chmod +x "$BUNDLE/Contents/Resources/fanctl" "$BUNDLE/Contents/Resources/fancontrol-check"
 chmod +x "$BUNDLE/Contents/MacOS/FanControl"
 

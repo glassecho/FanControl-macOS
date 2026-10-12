@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ServiceManagement
 
 // MARK: - 来自辅助程序的状态
 
@@ -29,6 +30,14 @@ struct FanState: Decodable, Identifiable {
 
 struct SensorState: Decodable, Identifiable {
     let key: String
+    let value: Double
+    var id: String { key }
+}
+
+/// 传感器面板里的一项（由 SensorState 挑出来的）
+struct SensorItem: Identifiable {
+    let key: String
+    let label: String
     let value: Double
     var id: String { key }
 }
@@ -64,6 +73,159 @@ struct Snapshot: Decodable {
 
     func sensor(_ key: String) -> Double? {
         sensors.first { $0.key == key }?.value
+    }
+}
+
+// MARK: - 系统监控数据（fanctl sys，只读）
+
+struct CpuInfo: Decodable {
+    let cores: Int
+    let total: Double
+    let user: Double
+    let system: Double
+    let load: [Double]
+    let brand: String
+    let uptime: Double
+    let perCore: [Double]
+}
+
+struct MemInfo: Decodable {
+    let total: Double
+    let used: Double
+    let wired: Double
+    let compressed: Double
+    let swapTotal: Double
+    let swapUsed: Double
+
+    var ratio: Double { total > 0 ? min(1, used / total) : 0 }
+}
+
+struct DiskInfo: Decodable, Identifiable {
+    let mount: String
+    let total: Double
+    let free: Double
+    var id: String { mount }
+
+    var used: Double { max(0, total - free) }
+    var ratio: Double { total > 0 ? min(1, used / total) : 0 }
+    /// 挂载点显示名：根卷给个中文名，外置卷用卷名
+    var name: String {
+        if mount == "/" { return "系统盘" }
+        return (mount as NSString).lastPathComponent
+    }
+}
+
+struct NetInfo: Decodable {
+    let iface: String
+    let `in`: Double
+    let out: Double
+}
+
+struct ProcInfo: Decodable, Identifiable {
+    let pid: Int
+    let name: String
+    let cpu: Double
+    var id: Int { pid }
+}
+
+struct SysInfo: Decodable {
+    let ok: Bool
+    let cpu: CpuInfo
+    let mem: MemInfo
+    let disk: [DiskInfo]
+    let net: NetInfo
+    let procs: [ProcInfo]
+}
+
+/// 监控页上可以单独开关的面板
+enum PanelKind: String, CaseIterable, Identifiable {
+    case cpu, gpu, memory, storage, network, processes, sensors, system
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .cpu:       return "CPU"
+        case .gpu:       return "显卡"
+        case .memory:    return "内存"
+        case .storage:   return "存储"
+        case .network:   return "网络"
+        case .processes: return "进程"
+        case .sensors:   return "传感器"
+        case .system:    return "系统"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .cpu:       return "cpu"
+        case .gpu:       return "display"
+        case .memory:    return "memorychip"
+        case .storage:   return "internaldrive"
+        case .network:   return "network"
+        case .processes: return "list.bullet.rectangle"
+        case .sensors:   return "thermometer.medium"
+        case .system:    return "info.circle"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .cpu:       return "总占用 · 每个核心 · 负载"
+        case .gpu:       return "显卡风扇 · 温度 · 功耗"
+        case .memory:    return "已用 · 联动 · 压缩 · 交换"
+        case .storage:   return "各卷已用空间"
+        case .network:   return "上行 / 下行速率"
+        case .processes: return "占用最高的进程"
+        case .sensors:   return "CPU / GPU 温度"
+        case .system:    return "机型 · 运行时间 · 负载"
+        }
+    }
+}
+
+/// 菜单栏（状态栏）里可以显示的项目。每一项都能单独开关。
+enum MenuBarItem: String, CaseIterable, Identifiable {
+    case icon, cpuTemp, gpuTemp, cpuLoad, memory, fanRPM, gpuFan, network
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .icon:    return "风扇图标"
+        case .cpuTemp: return "CPU 温度"
+        case .gpuTemp: return "GPU 温度"
+        case .cpuLoad: return "CPU 占用"
+        case .memory:  return "内存"
+        case .fanRPM:  return "风扇转速"
+        case .gpuFan:  return "显卡风扇"
+        case .network: return "网络"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .icon:    return "fanblades.fill"
+        case .cpuTemp: return "cpu"
+        case .gpuTemp: return "display"
+        case .cpuLoad: return "speedometer"
+        case .memory:  return "memorychip"
+        case .fanRPM:  return "wind"
+        case .gpuFan:  return "fanblades"
+        case .network: return "arrow.up.arrow.down"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .icon:    return "只显示一个图标"
+        case .cpuTemp: return "最热核心的温度"
+        case .gpuTemp: return "显卡温度"
+        case .cpuLoad: return "总占用率"
+        case .memory:  return "已用比例"
+        case .fanRPM:  return "转得最快的受控风扇"
+        case .gpuFan:  return "显卡自身风扇转速"
+        case .network: return "下行速率"
+        }
     }
 }
 
@@ -160,8 +322,30 @@ enum ControlMode: String, CaseIterable, Identifiable {
 
 // MARK: - 控制器
 
+/// 子进程输出的小容器。给并发读取 stdout / stderr 的两个线程各用一个，
+/// 避免在并发闭包里直接捕获 var。
+private final class PipeBox: @unchecked Sendable {
+    var data = Data()
+}
+
 final class FanController: ObservableObject {
     @Published var snapshot: Snapshot?
+    /// 系统监控数据（CPU/内存/磁盘/网络/进程）—— 只读
+    @Published var sys: SysInfo?
+    /// 监控页上开启的面板，持久化到 UserDefaults
+    @Published var enabledPanels: Set<PanelKind> = Set(PanelKind.allCases) {
+        didSet { Self.savePanels(enabledPanels) }
+    }
+    /// 菜单栏上显示的项目，持久化到 UserDefaults
+    @Published var menuBarItems: Set<MenuBarItem> = [.icon, .cpuTemp, .gpuTemp] {
+        didSet { Self.saveMenuBar(menuBarItems) }
+    }
+    /// 网络速率（字节/秒），由两次采样差值算出
+    @Published var netDown: Double?
+    @Published var netUp: Double?
+    /// CPU 总占用历史，画迷你走势图用
+    @Published var cpuHistory: [Double] = []
+
     @Published var mode: ControlMode = .standard
     /// 曲线模式下的占空比下限（%）。切换模式时会重置为该模式的预设值，之后可手动微调。
     @Published var minDuty: Double = ControlMode.standard.minDuty
@@ -180,7 +364,13 @@ final class FanController: ObservableObject {
     @Published var appliedMode: ControlMode? = nil
 
     static let installedHelper = "/usr/local/sbin/fanctl"
-    static let version = "1.2.0"
+
+    /// 版本号的**唯一来源**是 Info.plist 的 CFBundleShortVersionString。
+    /// 以前这里、Info.plist、make-pkg.sh 三处各写一遍，改了 plist 忘了改这里，
+    /// 界面上就会显示旧版本号。现在统一从 Bundle 读，改版本只需动 Info.plist。
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+    }
 
     /// 只读操作可以走任意一份 fanctl；写操作必须走已安装的那份（sudoers 只授权了它）。
     /// 环境变量 FANCTL_PATH 可覆盖，便于开发/预览时用未安装的新版 helper。
@@ -190,13 +380,51 @@ final class FanController: ObservableObject {
         if FileManager.default.isExecutableFile(atPath: Self.installedHelper) { return Self.installedHelper }
         if let res = Bundle.main.resourceURL?.appendingPathComponent("fanctl").path,
            FileManager.default.isExecutableFile(atPath: res) { return res }
+        #if DEBUG
+        // 开发期兜底。包在 #if DEBUG 里，发布版不会把本机路径编进二进制
+        // （否则 `strings FanControl | grep WorkBuddy` 就能看到开发目录）。
         let dev = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("WorkBuddy AI/2026-10-08-18-53-57/FanControl/helper/fanctl").path
-        return dev
+        if FileManager.default.isExecutableFile(atPath: dev) { return dev }
+        #endif
+        return Self.installedHelper
     }
 
     private var timer: Timer?
+    private let work = DispatchQueue(label: "com.fancontrol.refresh", qos: .utility)
+    private var refreshing = false
+
+    /// 上一次网络采样，用来算速率
+    private var lastNet: (iface: String, inBytes: Double, outBytes: Double, at: Date)?
+
+    private static let panelsKey = "fancontrol.enabledPanels"
+    private static let menuBarKey = "fancontrol.menuBarItems"
+
+    static func loadPanels() -> Set<PanelKind> {
+        guard let raw = UserDefaults.standard.array(forKey: panelsKey) as? [String] else {
+            return Set(PanelKind.allCases)      // 首次运行：全开
+        }
+        return Set(raw.compactMap { PanelKind(rawValue: $0) })
+    }
+
+    private static func savePanels(_ s: Set<PanelKind>) {
+        UserDefaults.standard.set(s.map(\.rawValue), forKey: panelsKey)
+    }
+
+    static func loadMenuBar() -> Set<MenuBarItem> {
+        guard let raw = UserDefaults.standard.array(forKey: menuBarKey) as? [String] else {
+            return [.icon, .cpuTemp, .gpuTemp]  // 首次运行：图标 + CPU/GPU 温度
+        }
+        return Set(raw.compactMap { MenuBarItem(rawValue: $0) })
+    }
+
+    private static func saveMenuBar(_ s: Set<MenuBarItem>) {
+        UserDefaults.standard.set(s.map(\.rawValue), forKey: menuBarKey)
+    }
+
     init() {
+        enabledPanels = Self.loadPanels()
+        menuBarItems = Self.loadMenuBar()
         refresh()
         startPolling()
     }
@@ -221,12 +449,29 @@ final class FanController: ObservableObject {
         do { try p.run() } catch {
             return (-1, "", "无法执行 \(exe): \(error.localizedDescription)")
         }
-        let od = o.fileHandleForReading.readDataToEndOfFile()
-        let ed = e.fileHandleForReading.readDataToEndOfFile()
+
+        // stdout 与 stderr 必须**同时**排空。
+        // 若按「先读完 stdout、再读 stderr」的顺序，子进程一旦把 stderr 写满管道缓冲区
+        // （macOS 上约 64KB），它会阻塞在 write 上永不退出，stdout 也就永远等不到 EOF
+        // —— 两边互相等待，死锁。这里各起一个后台线程并行读，彻底避开这个陷阱。
+        let outBox = PipeBox(), errBox = PipeBox()
+        let g = DispatchGroup()
+        g.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outBox.data = o.fileHandleForReading.readDataToEndOfFile()
+            g.leave()
+        }
+        g.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errBox.data = e.fileHandleForReading.readDataToEndOfFile()
+            g.leave()
+        }
+        g.wait()
         p.waitUntilExit()
+
         return (p.terminationStatus,
-                String(data: od, encoding: .utf8) ?? "",
-                String(data: ed, encoding: .utf8) ?? "")
+                String(data: outBox.data, encoding: .utf8) ?? "",
+                String(data: errBox.data, encoding: .utf8) ?? "")
     }
 
     @discardableResult
@@ -236,16 +481,35 @@ final class FanController: ObservableObject {
 
     // MARK: 读取状态
 
-    /// 读一次状态。1.2 只有 `fanctl read` 一个只读子命令，很快，直接同步调。
+    /// 读状态放在后台队列 —— `fanctl sys` 内部有 400ms 采样窗口，
+    /// 放主线程会把界面卡住。两件事做完一起回主线程更新。
     func refresh() {
+        if refreshing { return }
+        refreshing = true
         let helper = readHelper
-        let r = run(helper, ["read"])
-        if r.code == 0, let d = r.out.data(using: .utf8),
-           let snap = try? JSONDecoder().decode(Snapshot.self, from: d) {
-            ingest(snap)
-        } else {
+
+        work.async { [weak self] in
+            guard let self = self else { return }
+
+            let r = self.run(helper, ["read"])
+            var snap: Snapshot?
+            if r.code == 0, let d = r.out.data(using: .utf8) {
+                snap = try? JSONDecoder().decode(Snapshot.self, from: d)
+            }
+
+            let s = self.run(helper, ["sys"])
+            var sysInfo: SysInfo?
+            if s.code == 0, let d = s.out.data(using: .utf8) {
+                sysInfo = try? JSONDecoder().decode(SysInfo.self, from: d)
+            }
+
             let err = r.err.trimmingCharacters(in: .whitespacesAndNewlines)
-            message = err.isEmpty ? "读取状态失败" : err
+            DispatchQueue.main.async {
+                self.refreshing = false
+                if let snap = snap { self.ingest(snap) }
+                else { self.message = err.isEmpty ? "读取状态失败" : err }
+                if let sysInfo = sysInfo { self.ingest(sysInfo) }
+            }
         }
     }
 
@@ -263,6 +527,25 @@ final class FanController: ObservableObject {
             }
         }
         message = ""
+    }
+
+    private func ingest(_ s: SysInfo) {
+        sys = s
+
+        // 网络速率：与上一次采样做差（间隔约等于轮询周期，比 400ms 窗口平滑）
+        let now = Date()
+        if let last = lastNet, last.iface == s.net.iface {
+            let dt = now.timeIntervalSince(last.at)
+            if dt > 0.2 {
+                netDown = max(0, (s.net.in - last.inBytes) / dt)
+                netUp   = max(0, (s.net.out - last.outBytes) / dt)
+            }
+        }
+        lastNet = (s.net.iface, s.net.in, s.net.out, now)
+
+        // CPU 走势
+        cpuHistory.append(s.cpu.total)
+        if cpuHistory.count > 90 { cpuHistory.removeFirst(cpuHistory.count - 90) }
     }
 
     // MARK: 应用
@@ -316,9 +599,12 @@ final class FanController: ObservableObject {
                 hysteresis = 3
 
                 """
-                let tmp = "/tmp/fancontrol-gpufand.conf"
+                // 用唯一文件名 + 用户私有临时目录：
+                // 固定路径会被多实例互相覆盖，且 /tmp 下的文件默认 644、其他用户可读
+                let tmp = NSTemporaryDirectory() + "fancontrol-gpufand-\(UUID().uuidString).conf"
                 try? conf.write(toFile: tmp, atomically: true, encoding: .utf8)
                 let r1 = self.runSudo(["conf", tmp])
+                try? FileManager.default.removeItem(atPath: tmp)
                 let r2 = self.runSudo(["daemon", "restart"])
                 log.append(r1.out.isEmpty ? r1.err : r1.out)
                 log.append(r2.out.isEmpty ? r2.err : r2.out)
@@ -365,6 +651,66 @@ final class FanController: ObservableObject {
     var cpuTemp: Double? { hottest(cpuChoice.keys) }
     var gpuTemp: Double? { hottest(gpuChoice.keys) }
 
+    // MARK: 监控页用的便捷访问
+
+    var cpuInfo: CpuInfo? { sys?.cpu }
+    var memInfo: MemInfo? { sys?.mem }
+    var disks: [DiskInfo] { sys?.disk ?? [] }
+    var procs: [ProcInfo] { sys?.procs ?? [] }
+    var netIface: String? { sys?.net.iface }
+
+    /// 传感器面板要显示的项：CPU 各核心 + GPU 核心/板边
+    ///
+    /// 核心键是 `TC<n>C`。**不要写死 `0..<8`** —— 不同机器暴露的核心数不一样，
+    /// 写死 8 会漏掉第 9 个及以后。这里按实际存在的键动态发现，并按序号排序。
+    var sensorItems: [SensorItem] {
+        var out: [SensorItem] = []
+
+        let cores: [(n: Int, key: String, value: Double)] = (snapshot?.sensors ?? [])
+            .compactMap { s in
+                guard s.key.hasPrefix("TC"), s.key.hasSuffix("C"), s.value > 0 else { return nil }
+                guard let n = Int(s.key.dropFirst(2).dropLast()) else { return nil }
+                return (n, s.key, s.value)
+            }
+            .sorted { $0.n < $1.n }
+
+        for c in cores {
+            out.append(SensorItem(key: c.key, label: "核心 \(c.n)", value: c.value))
+        }
+
+        if let v = snapshot?.sensor("TG0D") { out.append(SensorItem(key: "TG0D", label: "GPU 核心", value: v)) }
+        if let v = snapshot?.sensor("TG0P") { out.append(SensorItem(key: "TG0P", label: "GPU 板边", value: v)) }
+        return out
+    }
+
+    /// 面板开关
+    func panel(_ k: PanelKind) -> Bool { enabledPanels.contains(k) }
+    func togglePanel(_ k: PanelKind) {
+        if enabledPanels.contains(k) { enabledPanels.remove(k) } else { enabledPanels.insert(k) }
+    }
+    var enabledPanelList: [PanelKind] { PanelKind.allCases.filter { enabledPanels.contains($0) } }
+
+    // MARK: 菜单栏
+
+    func menuBar(_ k: MenuBarItem) -> Bool { menuBarItems.contains(k) }
+
+    func toggleMenuBar(_ k: MenuBarItem) {
+        if menuBarItems.contains(k) { menuBarItems.remove(k) } else { menuBarItems.insert(k) }
+    }
+
+    /// 按固定顺序排列（allCases 的顺序），标签和面板共用
+    var menuBarItemList: [MenuBarItem] {
+        MenuBarItem.allCases.filter { menuBarItems.contains($0) }
+    }
+
+    /// 受控风扇里转得最快的那个（排除水泵）—— 菜单栏上显示它最有意义
+    var topFanRPM: Double? {
+        guard let s = snapshot else { return nil }
+        let live = s.fans.filter { $0.ch != s.pumpChannel && $0.rpm > 0 }
+        if let m = live.map(\.rpm).max() { return m }
+        return s.fans.filter { $0.ch != s.pumpChannel }.map(\.rpm).max()
+    }
+
     /// 只读的显卡监控数据（风扇转速/占空比/温度/功耗/频率/占用）。
     /// 注意：这与上面的 gpuTemp 不是一回事 —— gpuTemp 来自 SMC（RadeonSensor），
     /// 这里来自 IORegistry，用于显示显卡自身风扇的状态。
@@ -372,6 +718,32 @@ final class FanController: ObservableObject {
 
     /// 显卡风扇转速，用于顶栏
     var gpuFanRPM: Double? { snapshot?.gpu?.fanRPM }
+
+    // MARK: 开机自启
+
+    /// 是否已注册为登录项。用 SMAppService（macOS 13+）—— 系统会在
+    /// 「系统设置 → 通用 → 登录项」里列出它，用户也能自己关掉，比手写 LaunchAgent 正规。
+    @Published var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+
+    func refreshLaunchAtLogin() {
+        launchAtLogin = (SMAppService.mainApp.status == .enabled)
+    }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on {
+                if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
+            } else {
+                if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
+            }
+            message = on
+                ? "已设为开机自启 —— 开机后会自动打开主窗口，关掉即可，菜单栏图标会保留"
+                : "已关闭开机自启"
+        } catch {
+            message = "设置开机自启失败：\(error.localizedDescription)"
+        }
+        refreshLaunchAtLogin()
+    }
 
     /// 水泵通道不是从 fancontrol.conf 读来的 —— 换机器后必须确认，
     /// 否则可能把真水泵锁死、或把普通风扇放开调速
