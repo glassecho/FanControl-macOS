@@ -335,6 +335,15 @@ it is either reading the GPU or it isn't working.
 > **The English UI shipped in 1.5.0** — tracked in
 > [#1](https://github.com/glassecho/FanControl-macOS/issues/1).
 
+## Known limitations
+
+- GPU fans are **read-only** — managed by the card's firmware PowerPlay table; macOS exposes no
+  writable interface.
+- Real Macs and Apple Silicon are not supported.
+- **Traditional Chinese UI text is still Simplified** (the app name is Traditional).
+- The UI is **dark-only**.
+- No Apple Developer signature, so Gatekeeper will block it.
+
 ## Credits
 
 Kext derived from [shohart/gpufan](https://github.com/shohart/gpufan) →
