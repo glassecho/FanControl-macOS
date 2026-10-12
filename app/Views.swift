@@ -140,7 +140,7 @@ struct ModeRow: View {
                             .font(.system(size: 13, weight: selected ? .semibold : .regular))
                             .foregroundStyle(Theme.text)
                         if applied {
-                            Text("运行中")
+                            Text(L.svcRunning)
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Theme.green)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -381,7 +381,7 @@ struct FanRow: View {
             }
             .buttonStyle(.plain)
             .disabled(isPump)
-            .help(isPump ? "水泵通道，已锁定不参与调速" : "是否参与调速")
+            .help(isPump ? L.pumpLockedTip : L.fanSelectTip)
 
             Text(fan.name)
                 .font(.system(size: 12.5, weight: .medium))
@@ -419,7 +419,7 @@ struct FanRow: View {
             Spacer(minLength: 8)
 
             if isPump {
-                Text("水泵 · 已锁定")
+                Text(L.pumpLockedShort)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Theme.orange)
             } else if manualMode {
@@ -457,9 +457,9 @@ func fmtRate(_ v: Double?) -> String {
 /// 秒 → "3.4 小时" / "12 分钟"
 func fmtUptime(_ s: Double?) -> String {
     guard let s = s, s > 0 else { return "—" }
-    if s >= 86400 { return String(format: "%.1f 天", s / 86400) }
-    if s >= 3600  { return String(format: "%.1f 小时", s / 3600) }
-    return String(format: "%.0f 分钟", s / 60)
+    if s >= 86400 { return L.days(s / 86400) }
+    if s >= 3600  { return L.hours(s / 3600) }
+    return L.minutes(s / 60)
 }
 
 private func chunked<T>(_ a: [T], _ n: Int) -> [[T]] {
@@ -534,7 +534,7 @@ struct SwitchRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(on ? "点击隐藏「\(title)」" : "点击显示「\(title)」")
+        .help(on ? L.hideTip(title) : L.showTip(title))
     }
 }
 
@@ -669,7 +669,7 @@ struct CoreCell: View {
         }
         .frame(height: 22)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.stroke, lineWidth: 1))
-        .help("核心 \(index)：\(String(format: "%.0f", pct))%")
+        .help(L.coreTooltip(index, pct))
     }
 }
 
@@ -683,7 +683,7 @@ struct CpuPanel: View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
                 PanelHeader(title: "CPU", symbol: "cpu",
-                            trailing: "\(cpu.cores) 线程")
+                            trailing: L.threads(cpu.cores))
 
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(String(format: "%.0f", cpu.total))
@@ -694,16 +694,16 @@ struct CpuPanel: View {
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(Theme.dim)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("用户 \(String(format: "%.1f", cpu.user))%")
+                        Text(L.userPct(cpu.user))
                             .font(.system(size: 10.5, design: .rounded)).foregroundStyle(Theme.dim)
-                        Text("系统 \(String(format: "%.1f", cpu.system))%")
+                        Text(L.systemPct(cpu.system))
                             .font(.system(size: 10.5, design: .rounded)).foregroundStyle(Theme.dim)
                     }
                     .monospacedDigit()
                     .padding(.leading, 6)
                     Spacer(minLength: 6)
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("负载").font(.system(size: 9.5)).foregroundStyle(Theme.dim)
+                        Text(L.labelLoad).font(.system(size: 9.5)).foregroundStyle(Theme.dim)
                         Text(cpu.load.map { String(format: "%.2f", $0) }.joined(separator: " / "))
                             .font(.system(size: 10.5, design: .rounded)).foregroundStyle(Theme.text)
                             .monospacedDigit()
@@ -714,7 +714,7 @@ struct CpuPanel: View {
                     .frame(height: 34)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("每个核心")
+                    Text(L.labelPerCore)
                         .font(.system(size: 9.5)).foregroundStyle(Theme.dim)
                     let cols = 8
                     let rows = chunked(cpu.perCore, cols)
@@ -752,7 +752,7 @@ struct MemoryPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "内存", symbol: "memorychip",
+                PanelHeader(title: L.panelMemory, symbol: "memorychip",
                             trailing: "\(fmtBytes(mem.used)) / \(fmtBytes(mem.total))")
 
                 HStack(spacing: 9) {
@@ -767,9 +767,9 @@ struct MemoryPanel: View {
                 }
 
                 HStack(spacing: 14) {
-                    memItem("联动", mem.wired)
-                    memItem("压缩", mem.compressed)
-                    memItem("交换", mem.swapUsed, extra: mem.swapTotal > 0 ? "/ \(fmtBytes(mem.swapTotal))" : nil)
+                    memItem(L.labelWired, mem.wired)
+                    memItem(L.labelCompressed, mem.compressed)
+                    memItem(L.labelSwap, mem.swapUsed, extra: mem.swapTotal > 0 ? "/ \(fmtBytes(mem.swapTotal))" : nil)
                     Spacer(minLength: 0)
                 }
             }
@@ -797,11 +797,11 @@ struct StoragePanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "存储", symbol: "internaldrive",
-                            trailing: "\(disks.count) 个卷")
+                PanelHeader(title: L.panelStorage, symbol: "internaldrive",
+                            trailing: L.volumes(disks.count))
 
                 if disks.isEmpty {
-                    Text("没有可显示的卷").font(.system(size: 11)).foregroundStyle(Theme.dim)
+                    Text(L.labelNoVolumes).font(.system(size: 11)).foregroundStyle(Theme.dim)
                 } else {
                     VStack(spacing: 7) {
                         ForEach(disks) { d in
@@ -844,16 +844,15 @@ struct NetworkPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "网络", symbol: "network", trailing: iface)
+                PanelHeader(title: L.panelNetwork, symbol: "network", trailing: iface)
 
                 HStack(spacing: 0) {
-                    rateBlock("arrow.down", "下行", down, Theme.green)
+                    rateBlock("arrow.down", L.labelDown, down, Theme.green)
                     Divider().frame(height: 30).overlay(Theme.stroke)
-                    rateBlock("arrow.up", "上行", up, Theme.accent)
+                    rateBlock("arrow.up", L.labelUp, up, Theme.accent)
                 }
 
-                Text(down == nil && up == nil ? "正在采样…（首次需要两次读数）"
-                                              : "速率按轮询间隔（约 2 秒）计算")
+                Text(down == nil && up == nil ? L.labelNetSampling : L.labelNetHint)
                     .font(.system(size: 9.5)).foregroundStyle(Theme.dim)
             }
         }
@@ -879,11 +878,11 @@ struct ProcessPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "进程", symbol: "list.bullet.rectangle",
-                            trailing: procs.isEmpty ? nil : "按 CPU 占用")
+                PanelHeader(title: L.panelProcesses, symbol: "list.bullet.rectangle",
+                            trailing: procs.isEmpty ? nil : L.labelByCPU)
 
                 if procs.isEmpty {
-                    Text("读取中…").font(.system(size: 11)).foregroundStyle(Theme.dim)
+                    Text(L.reading).font(.system(size: 11)).foregroundStyle(Theme.dim)
                 } else {
                     let peak = max(1.0, procs.first?.cpu ?? 1)
                     VStack(spacing: 5) {
@@ -915,11 +914,11 @@ struct SensorPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "传感器", symbol: "thermometer.medium",
-                            trailing: "来自 SMC")
+                PanelHeader(title: L.panelSensors, symbol: "thermometer.medium",
+                            trailing: L.labelFromSMC)
 
                 if items.isEmpty {
-                    Text("没有读到温度传感器").font(.system(size: 11)).foregroundStyle(Theme.dim)
+                    Text(L.labelNoSensors).font(.system(size: 11)).foregroundStyle(Theme.dim)
                 } else {
                     VStack(spacing: 4) {
                         ForEach(Array(chunked(items, 4).enumerated()), id: \.offset) { _, row in
@@ -962,17 +961,17 @@ struct SystemPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 8) {
-                PanelHeader(title: "系统", symbol: "info.circle", trailing: "v\(version)")
+                PanelHeader(title: L.panelSystem, symbol: "info.circle", trailing: "v\(version)")
 
-                Text(cpu.brand.isEmpty ? "未知处理器" : cpu.brand)
+                Text(cpu.brand.isEmpty ? L.labelUnknownCPU : cpu.brand)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 16) {
-                    kv("逻辑核心", "\(cpu.cores)")
-                    kv("运行时间", fmtUptime(cpu.uptime))
-                    kv("负载", String(format: "%.2f", cpu.load.first ?? 0))
+                    kv(L.labelLogicalCores, "\(cpu.cores)")
+                    kv(L.labelUptime, fmtUptime(cpu.uptime))
+                    kv(L.labelLoad, String(format: "%.2f", cpu.load.first ?? 0))
                     Spacer(minLength: 0)
                 }
             }
@@ -995,34 +994,34 @@ struct GpuPanel: View {
     var body: some View {
         Card(padding: 13) {
             VStack(alignment: .leading, spacing: 9) {
-                PanelHeader(title: "显卡", symbol: "display", trailing: "只读监控")
+                PanelHeader(title: L.panelGPU, symbol: "display", trailing: L.labelReadOnlyMonitor)
 
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        MetricChip(symbol: "fanblades.fill", label: "风扇",
+                        MetricChip(symbol: "fanblades.fill", label: L.labelGPUFan,
                                    value: fmt0(g.fanRPM),
                                    sub: g.fanRPM == nil ? nil
                                         : (g.fanPercent.map { String(format: "RPM · %.0f%%", $0) } ?? "RPM"),
                                    tint: Theme.text)
-                        MetricChip(symbol: "thermometer.medium", label: "温度",
+                        MetricChip(symbol: "thermometer.medium", label: L.labelTemp,
                                    value: fmt0(g.temp),
                                    sub: g.temp == nil ? nil : "°C",
                                    tint: tempTint(g.temp))
-                        MetricChip(symbol: "bolt.fill", label: "功耗",
+                        MetricChip(symbol: "bolt.fill", label: L.labelPower,
                                    value: fmt0(g.power),
                                    sub: g.power == nil ? nil : "W",
                                    tint: Theme.text)
                     }
                     HStack(spacing: 8) {
-                        MetricChip(symbol: "speedometer", label: "核心频率",
+                        MetricChip(symbol: "speedometer", label: L.labelCoreClock,
                                    value: fmt0(g.coreClock),
                                    sub: g.coreClock == nil ? nil : "MHz",
                                    tint: Theme.text)
-                        MetricChip(symbol: "memorychip", label: "显存频率",
+                        MetricChip(symbol: "memorychip", label: L.labelMemClock,
                                    value: fmt0(g.memClock),
                                    sub: g.memClock == nil ? nil : "MHz",
                                    tint: Theme.text)
-                        MetricChip(symbol: "gauge.with.dots.needle.bottom.50percent", label: "占用率",
+                        MetricChip(symbol: "gauge.with.dots.needle.bottom.50percent", label: L.labelUtilization,
                                    value: g.utilization.map { String(format: "%.0f", $0) } ?? "—",
                                    sub: g.utilization == nil ? nil : "%",
                                    tint: Theme.text)
@@ -1032,8 +1031,7 @@ struct GpuPanel: View {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10)).foregroundStyle(Theme.dim)
-                    Text("显卡风扇由显卡固件的 PowerPlay 表与驱动管理，macOS 没有开放的写入接口 —— "
-                         + "所以显卡风扇只能看、不能调。要改它得在 OpenCore 里注入修改过的风扇曲线，重启生效。")
+                    Text(L.gpuNote)
                         .font(.system(size: 10)).foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1055,7 +1053,7 @@ struct MonitorPanels: View {
                 HStack(spacing: 10) {
                     Image(systemName: "hourglass")
                         .font(.system(size: 13)).foregroundStyle(Theme.dim)
-                    Text("正在读取系统信息…（首次采样需要约 0.5 秒）")
+                    Text(L.headerReading)
                         .font(.system(size: 12)).foregroundStyle(Theme.dim)
                     Spacer()
                 }
@@ -1162,7 +1160,7 @@ struct MenuBarPanel: View {
         HStack(spacing: 9) {
             Image(systemName: "fanblades.fill")
                 .font(.system(size: 14)).foregroundStyle(Theme.accent)
-            Text("风扇控制")
+            Text(L.appName)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
             Spacer(minLength: 6)
             HStack(spacing: 5) {
@@ -1182,18 +1180,18 @@ struct MenuBarPanel: View {
                      tempTint(ctl.gpuTemp))
             }
             HStack(spacing: 6) {
-                stat("speedometer", "占用", ctl.cpuInfo.map { String(format: "%.0f%%", $0.total) } ?? "—",
+                stat("speedometer", L.statLoad, ctl.cpuInfo.map { String(format: "%.0f%%", $0.total) } ?? "—",
                      ctl.cpuInfo.map { loadTint($0.total) } ?? Theme.dim)
-                stat("memorychip", "内存", ctl.memInfo.map { String(format: "%.0f%%", $0.ratio * 100) } ?? "—",
+                stat("memorychip", L.statMemory, ctl.memInfo.map { String(format: "%.0f%%", $0.ratio * 100) } ?? "—",
                      Theme.text)
             }
             HStack(spacing: 6) {
-                stat("wind", "风扇", ctl.topFanRPM.map { String(format: "%.0f", $0) } ?? "—", Theme.text)
-                stat("fanblades", "显卡", ctl.gpuFanRPM.map { String(format: "%.0f", $0) } ?? "—", Theme.text)
+                stat("wind", L.statFan, ctl.topFanRPM.map { String(format: "%.0f", $0) } ?? "—", Theme.text)
+                stat("fanblades", L.statGPU, ctl.gpuFanRPM.map { String(format: "%.0f", $0) } ?? "—", Theme.text)
             }
             HStack(spacing: 6) {
-                stat("arrow.down", "下行", fmtRate(ctl.netDown), Theme.green)
-                stat("arrow.up", "上行", fmtRate(ctl.netUp), Theme.accent)
+                stat("arrow.down", L.labelDown, fmtRate(ctl.netDown), Theme.green)
+                stat("arrow.up", L.labelUp, fmtRate(ctl.netUp), Theme.accent)
             }
         }
     }
@@ -1217,7 +1215,7 @@ struct MenuBarPanel: View {
     private var menuBarToggles: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                SectionTitle(text: "菜单栏显示")
+                SectionTitle(text: L.menuBarSection)
                 Spacer()
                 Text("\(ctl.menuBarItems.count) / \(MenuBarItem.allCases.count)")
                     .font(.system(size: 10, design: .rounded))
@@ -1230,7 +1228,7 @@ struct MenuBarPanel: View {
                     }
                 }
             }
-            Text("关掉全部也会保留一个图标 —— 不然菜单栏就点不到了。")
+            Text(L.menuBarEmptyHint)
                 .font(.system(size: 9.5)).foregroundStyle(Theme.dim)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1239,10 +1237,10 @@ struct MenuBarPanel: View {
     /// 开机自启。用 SMAppService 注册为登录项，系统设置里能看到、也能自己关。
     private var launchAtLoginRow: some View {
         VStack(alignment: .leading, spacing: 5) {
-            SwitchRow(symbol: "power", title: "开机自启", on: ctl.launchAtLogin) {
+            SwitchRow(symbol: "power", title: L.launchAtLogin, on: ctl.launchAtLogin) {
                 ctl.setLaunchAtLogin(!ctl.launchAtLogin)
             }
-            Text("开机后会自动打开主窗口，关掉即可 —— 菜单栏图标会一直留着。")
+            Text(L.launchAtLoginHint)
                 .font(.system(size: 9.5)).foregroundStyle(Theme.dim)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1253,7 +1251,7 @@ struct MenuBarPanel: View {
             Button {
                 openMain()
             } label: {
-                Text("打开主窗口")
+                Text(L.openMainWindow)
                     .font(.system(size: 11.5))
                     .frame(maxWidth: .infinity)
             }
@@ -1263,13 +1261,13 @@ struct MenuBarPanel: View {
                 Image(systemName: "arrow.clockwise").font(.system(size: 11))
             }
             .buttonStyle(.bordered)
-            .help("立即刷新")
+            .help(L.refreshTip)
 
             Button { NSApp.terminate(nil) } label: {
                 Image(systemName: "power").font(.system(size: 11))
             }
             .buttonStyle(.bordered)
-            .help("退出风扇控制")
+            .help(L.quitTip)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
     }
@@ -1315,7 +1313,7 @@ struct ContentView: View {
             Image(systemName: "fanblades.fill")
                 .font(.system(size: 19))
                 .foregroundStyle(Theme.accent)
-            Text("风扇控制")
+            Text(L.appName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Theme.text)
 
@@ -1330,7 +1328,7 @@ struct ContentView: View {
             Button {
                 ctl.returnToBIOS()
             } label: {
-                Label("交还 BIOS", systemImage: "arrow.uturn.backward")
+                Label(L.headerReturnBIOS, systemImage: "arrow.uturn.backward")
                     .font(.system(size: 12))
             }
             .buttonStyle(.bordered)
@@ -1342,7 +1340,7 @@ struct ContentView: View {
                     .font(.system(size: 13))
             }
             .buttonStyle(.bordered)
-            .help("使用说明")
+            .help(L.headerHelpTip)
             .popover(isPresented: $showHelp, arrowEdge: .bottom) {
                 helpCard.frame(width: 430)
             }
@@ -1350,7 +1348,7 @@ struct ContentView: View {
             Button {
                 ctl.apply()
             } label: {
-                Label(ctl.busy ? "应用中…" : "应用", systemImage: "checkmark.circle.fill")
+                Label(ctl.busy ? L.headerApplying : L.headerApply, systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
             }
             .buttonStyle(.borderedProminent)
@@ -1380,8 +1378,8 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             Card(padding: 6) {
                 HStack(spacing: 4) {
-                    PageTab(title: "控制", symbol: "slider.horizontal.3", selected: page == 0) { page = 0 }
-                    PageTab(title: "监控", symbol: "chart.bar.fill", selected: page == 1) { page = 1 }
+                    PageTab(title: L.tabControl, symbol: "slider.horizontal.3", selected: page == 0) { page = 0 }
+                    PageTab(title: L.tabMonitor, symbol: "chart.bar.fill", selected: page == 1) { page = 1 }
                 }
             }
 
@@ -1396,7 +1394,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             Card(padding: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    SectionTitle(text: "控制模式")
+                    SectionTitle(text: L.controlModeSection)
                     ForEach(ControlMode.allCases) { m in
                         ModeRow(mode: m,
                                 selected: ctl.mode == m,
@@ -1410,13 +1408,13 @@ struct ContentView: View {
 
             Card(padding: 12) {
                 VStack(alignment: .leading, spacing: 10) {
-                    SectionTitle(text: "温度来源")
+                    SectionTitle(text: L.tempSourceSection)
                     sensorRow(title: "CPU", on: $ctl.useCPU, choice: $ctl.cpuChoice,
                               choices: SensorChoice.cpuChoices, temp: ctl.cpuTemp, tint: tempTint(ctl.cpuTemp))
                     Divider().overlay(Theme.stroke)
                     sensorRow(title: "GPU", on: $ctl.useGPU, choice: $ctl.gpuChoice,
                               choices: SensorChoice.gpuChoices, temp: ctl.gpuTemp, tint: tempTint(ctl.gpuTemp))
-                    Text("同时勾选时，取两者中较热的那个；每条来源内部也取最热")
+                    Text(L.tempSourceHint)
                         .font(.system(size: 10)).foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1429,7 +1427,7 @@ struct ContentView: View {
         Card(padding: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    SectionTitle(text: "显示面板")
+                    SectionTitle(text: L.panelSection)
                     Spacer()
                     Text("\(ctl.enabledPanels.count) / \(PanelKind.allCases.count)")
                         .font(.system(size: 10, design: .rounded))
@@ -1449,19 +1447,19 @@ struct ContentView: View {
                     Button {
                         ctl.enabledPanels = Set(PanelKind.allCases)
                     } label: {
-                        Text("全部显示").font(.system(size: 11)).frame(maxWidth: .infinity)
+                        Text(L.showAll).font(.system(size: 11)).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
 
                     Button {
                         ctl.enabledPanels = []
                     } label: {
-                        Text("全部隐藏").font(.system(size: 11)).frame(maxWidth: .infinity)
+                        Text(L.hideAll).font(.system(size: 11)).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
 
-                Text("开关会记住，下次打开保持原样。监控页刷新间隔 2 秒。")
+                Text(L.panelSectionHint)
                     .font(.system(size: 10)).foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1530,10 +1528,10 @@ struct ContentView: View {
             Card {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        SectionTitle(text: ctl.mode == .manual ? "手动占空比" : "温度 → 占空比 曲线")
+                        SectionTitle(text: ctl.mode == .manual ? L.manualDutySection : L.dutyCurveSection)
                         Spacer()
                         if ctl.mode.usesCurve {
-                            Text(ctl.mode == .custom ? "拖动圆点调整，下方按钮增删" : "预设曲线（切换到自定义可编辑）")
+                            Text(ctl.mode == .custom ? L.curveEditableHint : L.curvePresetHint)
                                 .font(.system(size: 10)).foregroundStyle(Theme.dim)
                         }
                     }
@@ -1546,7 +1544,7 @@ struct ContentView: View {
                         // 最低占空比：曲线之外的下限，风扇不会低于这个值（全速模式无意义，隐藏）
                         if ctl.mode != .full {
                             HStack(spacing: 10) {
-                            Text("最低占空比")
+                            Text(L.minDuty)
                                 .font(.system(size: 11.5)).foregroundStyle(Theme.dim)
                                 .frame(width: 66, alignment: .leading)
                             DutySlider(value: $ctl.minDuty, range: 0...60, step: 1,
@@ -1558,10 +1556,10 @@ struct ContentView: View {
                                 .monospacedDigit()
                                 .frame(width: 40, alignment: .leading)
                             if ctl.minDuty < 15 {
-                                Text("过低时部分风扇可能停转，留意下面转速")
+                                Text(L.minDutyWarn)
                                     .font(.system(size: 10.5)).foregroundStyle(Theme.orange)
                             } else {
-                                Text("曲线端点之外，占空比不会低于此值")
+                                Text(L.minDutyHint)
                                     .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
                             }
                             Spacer()
@@ -1581,7 +1579,7 @@ struct ContentView: View {
                                         }
                                     }
                                     ctl.customPoints.append(.init(temp: t.rounded(), duty: 70))
-                                } label: { Label("添加控制点", systemImage: "plus") .font(.system(size: 11)) }
+                                } label: { Label(L.addPoint, systemImage: "plus") .font(.system(size: 11)) }
                                 .buttonStyle(.bordered)
 
                                 Button {
@@ -1590,7 +1588,7 @@ struct ContentView: View {
                                         let mid = sorted[sorted.count / 2]
                                         ctl.customPoints.removeAll { $0.id == mid.id }
                                     }
-                                } label: { Label("删除控制点", systemImage: "minus").font(.system(size: 11)) }
+                                } label: { Label(L.removePoint, systemImage: "minus").font(.system(size: 11)) }
                                 .buttonStyle(.bordered)
 
                                 Text(ctl.activeCurve().sorted { $0.temp < $1.temp }
@@ -1600,7 +1598,7 @@ struct ContentView: View {
                             }
                         }
                     } else {
-                        Text("手动模式下，下面每个风扇的滑块直接设定固定占空比；不会跟随温度变化。")
+                        Text(L.manualHint)
                             .font(.system(size: 12)).foregroundStyle(Theme.dim)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 12)
@@ -1611,9 +1609,9 @@ struct ContentView: View {
             Card(padding: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        SectionTitle(text: "风扇通道")
+                        SectionTitle(text: L.fanChannelSection)
                         Spacer()
-                        Text("水泵通道已锁定 · 每 2 秒刷新")
+                        Text(L.fanChannelHint)
                             .font(.system(size: 10)).foregroundStyle(Theme.dim)
                     }
                     .padding(.bottom, 4)
@@ -1621,8 +1619,7 @@ struct ContentView: View {
                         HStack(spacing: 7) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 10.5)).foregroundStyle(Theme.orange)
-                            Text("水泵通道用的是默认值 ch\(ctl.snapshot?.pumpChannel ?? 6)，未从配置读到 —— 换过机器请核对后再调速，"
-                                 + "确认办法见「?」里的说明。")
+                            Text(L.pumpUnconfirmed(ctl.snapshot?.pumpChannel ?? 6))
                                 .font(.system(size: 10.5)).foregroundStyle(Theme.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1659,22 +1656,22 @@ struct ContentView: View {
     private var overviewStrip: some View {
         Card(padding: 12) {
             HStack(spacing: 16) {
-                SectionTitle(text: "运行概览")
+                SectionTitle(text: L.overviewSection)
                 if let c = ctl.cpuInfo {
                     overviewItem("cpu", "CPU", String(format: "%.0f%%", c.total), loadTint(c.total))
                 }
                 if let m = ctl.memInfo {
-                    overviewItem("memorychip", "内存", String(format: "%.0f%%", m.ratio * 100),
+                    overviewItem("memorychip", L.statMemory, String(format: "%.0f%%", m.ratio * 100),
                                  m.ratio > 0.85 ? Theme.red : Theme.accent)
                 }
                 if let d = ctl.disks.first {
-                    overviewItem("internaldrive", "系统盘", String(format: "%.0f%%", d.ratio * 100),
+                    overviewItem("internaldrive", L.systemDisk, String(format: "%.0f%%", d.ratio * 100),
                                  d.ratio > 0.9 ? Theme.red : Theme.accent)
                 }
-                overviewItem("arrow.down", "下行", fmtRate(ctl.netDown), Theme.green)
-                overviewItem("arrow.up", "上行", fmtRate(ctl.netUp), Theme.accent)
+                overviewItem("arrow.down", L.labelDown, fmtRate(ctl.netDown), Theme.green)
+                overviewItem("arrow.up", L.labelUp, fmtRate(ctl.netUp), Theme.accent)
                 Spacer(minLength: 8)
-                Text("完整数据见左栏「监控」页")
+                Text(L.overviewMore)
                     .font(.system(size: 10)).foregroundStyle(Theme.dim)
             }
         }
@@ -1695,45 +1692,40 @@ struct ContentView: View {
     var helpCard: some View {
         let svc = ctl.snapshot?.service
         let svcText: String = {
-            guard let svc = svc else { return "未知" }
-            if !svc.installed { return "未安装" }
-            return svc.running ? "运行中" : "已安装 · 未运行"
+            guard let svc = svc else { return L.svcUnknown }
+            if !svc.installed { return L.svcNotInstalled }
+            return svc.running ? L.svcRunning : L.svcInstalledNotRunning
         }()
         return Card(padding: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    SectionTitle(text: "说明")
+                    SectionTitle(text: L.helpTitle)
                     Spacer()
                     HStack(spacing: 6) {
                         Circle()
                             .fill(svc?.running == true ? Theme.green : Theme.dim)
                             .frame(width: 6, height: 6)
-                        Text("后台服务 \(svcText)")
+                        Text(L.backgroundService(svcText))
                             .font(.system(size: 10.5)).foregroundStyle(Theme.dim)
                     }
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     helpLine("checkmark.circle.fill", Theme.accent,
-                             "「应用」把当前模式写入后台服务 gpufand，之后即使关掉本窗口也持续生效。")
+                             L.helpControl1)
                     helpLine("arrow.uturn.backward", Theme.dim,
-                             "「交还 BIOS」停止后台服务，所有风扇交回主板 SmartFan 曲线。")
+                             L.helpControl2)
                     helpLine("slider.horizontal.3", Theme.dim,
-                             "手动模式会先停掉后台服务，再用每个风扇的滑块直接设定固定占空比。")
+                             L.helpControl3)
                     helpLine("exclamationmark.triangle.fill", Theme.orange,
-                             "水冷泵（ch\(ctl.snapshot?.pumpChannel ?? 6)）被锁定，不参与调速 —— 泵速过低会导致冷液流量不足。"
-                             + "通道号记在 /usr/local/etc/fancontrol.conf 的 pump_channel。")
+                             L.helpPump(ctl.snapshot?.pumpChannel ?? 6))
                     helpLine("fanblades", Theme.dim,
-                             "左栏顶部的「控制 / 监控」切页。监控页里的面板可以逐个开关，"
-                             + "开关记在系统偏好里，下次打开保持原样。")
+                             L.helpMonitor)
                     helpLine("display", Theme.dim,
-                             "「显卡」面板是只读的：显卡风扇由显卡固件的 PowerPlay 表与驱动管理，"
-                             + "macOS 没有开放写入接口，本程序不参与显卡调速。无驱动的显卡"
-                             + "（如 macOS 下的 NVIDIA 30 系）不会出现这个面板。")
+                             L.helpGPU)
                     helpLine("cpu", Theme.dim,
-                             "CPU 占用、每核占用、内存、磁盘、网络、进程都来自只读采样，"
-                             + "不写任何东西、也不需要额外权限。")
+                             L.helpReadOnly)
                     helpLine("lock.shield", Theme.dim,
-                             "写 SMC 需要特权，安装脚本已为 fanctl 配置免密规则；撤销见 install.sh 末尾。")
+                             L.helpSudo)
                 }
             }
         }
@@ -1755,12 +1747,12 @@ struct ContentView: View {
             if ctl.needsInstall {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
             }
-            Text(ctl.message.isEmpty ? "就绪" : ctl.message)
+            Text(ctl.message.isEmpty ? L.ready : ctl.message)
                 .font(.system(size: 11))
                 .foregroundStyle(ctl.needsInstall ? Theme.orange : Theme.dim)
                 .lineLimit(2)
             Spacer()
-            Text("曲线由 gpufand 后台服务执行 · 重启后自动恢复")
+            Text(L.footerHint)
                 .font(.system(size: 10)).foregroundStyle(Theme.dim)
         }
         .padding(.horizontal, 16).padding(.vertical, 9)

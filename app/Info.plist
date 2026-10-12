@@ -3,7 +3,12 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh_CN</string>
+	<string>zh-Hans</string>
+	<!-- 支持的语言由 app/en.lproj/ 与 app/zh-Hans.lproj/ 两个目录声明，
+	     不在这里再写一份 CFBundleLocalizations —— 两边都写会让
+	     Bundle.localizations 出现重复项（en, en, zh-Hans, zh-Hans）。
+	     这两个 .lproj 里的 InfoPlist.strings 覆盖 Finder / 程序坞 /
+	     菜单栏里显示的 app 名字；界面文案在 L.swift 里，编译进二进制。 -->
 	<key>CFBundleExecutable</key>
 	<string>FanControl</string>
 	<key>CFBundleIconFile</key>
@@ -19,9 +24,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.1</string>
+	<string>1.5.0</string>
 	<key>CFBundleVersion</key>
-	<string>15</string>
+	<string>16</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>

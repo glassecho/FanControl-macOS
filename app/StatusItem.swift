@@ -41,7 +41,7 @@ final class StatusItemController: NSObject {
             b.target = self
             b.action = #selector(togglePopover)
             b.imagePosition = .noImage
-            b.toolTip = "风扇控制"
+            b.toolTip = L.appName
         }
         statusItem = item
 
@@ -133,7 +133,7 @@ final class StatusItemController: NSObject {
 enum MainWindow {
     static func show() {
         NSApp.activate(ignoringOtherApps: true)
-        if let w = NSApp.windows.first(where: { $0.title == "风扇控制" }) {
+        if let w = NSApp.windows.first(where: { $0.title == L.appName }) {
             w.makeKeyAndOrderFront(nil)
         }
     }
@@ -153,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// SwiftUI 的 WindowGroup 窗口是异步创建的，所以要轮几次才能抓到
     private func adoptMainWindow(attempt: Int) {
-        if let w = NSApp.windows.first(where: { $0.title == "风扇控制" }) {
+        if let w = NSApp.windows.first(where: { $0.title == L.appName }) {
             w.delegate = self
             w.isReleasedWhenClosed = false
             return

@@ -1,0 +1,8 @@
+/* 風扇控制 —— 繁體中文 bundle 元数据
+ *
+ * 界面文案目前只有简体中文一份（app/L.swift 的 zh 分支）。
+ * 这里镜像 zh-Hans，是为了让繁体中文用户看到的 app 名字和界面语言一致 ——
+ * 否则会出现「界面中文、Finder 里叫 FanControl」的割裂。
+ * 真要做完整的 zh-Hant 翻译，改 L.swift 加一个 lang 分支即可。 */
+CFBundleName = "風扇控制";
+CFBundleDisplayName = "風扇控制";

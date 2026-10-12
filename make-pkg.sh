@@ -56,6 +56,7 @@ echo "== 1) 准备 payload =="
                                                         "$PAYLOAD/Library/LaunchDaemons/com.shohart.gpufand.plist"
 /usr/bin/ditto "$KEXT"                                  "$PAYLOAD$SHARE/SMCSuperIO.kext"
 /usr/bin/ditto "$HERE/移植说明.md"                       "$PAYLOAD$SHARE/移植说明.md"
+/usr/bin/ditto "$HERE/PORTING.md"                       "$PAYLOAD$SHARE/PORTING.md"
 /usr/bin/ditto "$HERE/uninstall.sh"                     "$PAYLOAD$SHARE/uninstall.sh"
 /bin/chmod 755 "$PAYLOAD/usr/local/sbin/fanctl" \
                "$PAYLOAD/usr/local/sbin/fancontrol-check" \
@@ -242,7 +243,13 @@ code{background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px}
       点图标弹出面板可随时增删；同时换了应用图标。</li>
   <li><b>1.4.1 新增</b>：菜单栏面板里可直接开关<b>「开机自启」</b>，
       不用再去系统设置里手动加登录项。</li>
+  <li><b>1.5.0 新增</b>：界面支持<b>中英双语</b>，跟随系统语言自动切换 ——
+      英文系统上第一次打开就是英文，不需要任何设置项；
+      Finder / 程序坞里的 <b>app 名字</b>也跟着变。</li>
 </ul>
+<p>Since 1.5.0 the UI is <b>bilingual (English / Simplified Chinese)</b> and follows your system
+language automatically — there is no setting to change. See <code>PORTING.md</code> for the English
+porting guide.</p>
 <p class="warn">⚠ 换过机器的话，装完请务必运行
 <code>zsh /usr/local/sbin/fancontrol-check</code> 确认水泵通道。</p>
 </body></html>
@@ -258,7 +265,7 @@ code{background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px}
 <ol>
   <li>把 <code>/usr/local/share/fancontrol/SMCSuperIO.kext</code> 放进
       EFI/OC/Kexts（替换同名文件）并在 config.plist 的 Kernel → Add 里注册，然后重启。
-      <br>详细步骤见 <code>/usr/local/share/fancontrol/移植说明.md</code></li>
+      <br>详细步骤见 <code>/usr/local/share/fancontrol/移植说明.md</code>（英文版 <code>PORTING.md</code>）</li>
   <li>运行 <code>zsh /usr/local/sbin/fancontrol-check</code> 确认水泵通道。</li>
 </ol>
 <p>然后打开 <b>/Applications/FanControl.app</b>。</p>
@@ -303,6 +310,7 @@ DMGROOT=$PKGDIR/dmg
 /bin/mkdir -p "$DMGROOT"
 /usr/bin/ditto "$OUT" "$DMGROOT/FanControl-$VERSION.pkg"
 /usr/bin/ditto "$HERE/移植说明.md" "$DMGROOT/移植说明.md"
+/usr/bin/ditto "$HERE/PORTING.md" "$DMGROOT/PORTING.md"
 
 cat > "$DMGROOT/先读我.txt" <<TXT
 FanControl $VERSION —— 在 macOS 下控制主板风扇转速
@@ -353,8 +361,16 @@ FanControl $VERSION —— 在 macOS 下控制主板风扇转速
 
 【详细说明】
 
-  见同目录下的 移植说明.md
-  （安装后也会有一份在 /usr/local/share/fancontrol/移植说明.md）
+  见同目录下的 移植说明.md（中文）/ PORTING.md（English）
+  （安装后也会各有一份在 /usr/local/share/fancontrol/）
+
+
+【界面语言】
+
+  1.5.0 起界面支持中英双语，跟随系统语言自动切换，没有设置项。
+  英文系统上第一次打开就是英文，Finder / 程序坞里的 app 名字也跟着变。
+  The UI is bilingual (English / Simplified Chinese) since 1.5.0 and follows
+  your system language — no setting to change.
 
 
 【关于开机自启】

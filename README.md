@@ -7,7 +7,7 @@
 
 > **English?** [Jump to the English section ↓](#english) ·
 > Hackintosh motherboard fan control for macOS — a GUI front-end for [gpufan](https://github.com/shohart/gpufan)'s patched SMCSuperIO kext.
-> *The GUI is currently Chinese-only.*
+> **Bilingual UI (English / 简体中文), follows your system language.**
 
 <img src="preview/01-control-standard.png" width="640" alt="FanControl 控制页">
 
@@ -19,9 +19,9 @@
 
 | 文件 | 给谁用 |
 |---|---|
-| **`FanControl-1.4.1.dmg`** | **普通用户装这个** —— 双击即可 |
-| `FanControl-1.4.1.pkg` | 同上，也可以用命令行装 |
-| `FanControl-1.4.1-src.zip` | 想自己编译的人 |
+| **`FanControl-1.5.0.dmg`** | **普通用户装这个** —— 双击即可 |
+| `FanControl-1.5.0.pkg` | 同上，也可以用命令行装 |
+| `FanControl-1.5.0-src.zip` | 想自己编译的人 |
 
 > ⚠️ 本软件**没有 Apple 开发者签名**（作者没有证书），Gatekeeper 会拦。
 > 右键点安装包 → **打开** → 再点一次「打开」即可；
@@ -50,6 +50,14 @@
 ---
 
 ## 这个版本有什么
+
+### 1.5.0
+
+- **界面支持中英双语**，跟随系统语言自动切换 —— 英文系统上第一次打开就是英文，
+  不需要任何设置项。约 150 条文案全部双语，连 Finder / 程序坞里的 **app 名字**也跟着变。
+  实现细节见 [`CHANGELOG.md`](CHANGELOG.md)。
+- 另外修了三处内部问题：`needsInstall` 不再靠匹配提示文字、gpufand 配置文件注释改 ASCII、
+  手动模式下的失败标志补齐。
 
 ### 1.4.1
 
@@ -106,7 +114,7 @@ zsh /usr/local/sbin/fancontrol-check
 
 ```sh
 # 安装包
-sudo installer -pkg FanControl-1.4.1.pkg -target /
+sudo installer -pkg FanControl-1.5.0.pkg -target /
 
 # 或者从源码
 zsh build.sh          # 需要 Xcode Command Line Tools
@@ -145,7 +153,7 @@ FANCTL_PATH="$PWD/helper/fanctl" /tmp/render preview
 ## 目录结构
 
 ```
-app/            SwiftUI 源码（App / Model / Views / StatusItem）与 Info.plist、图标
+app/            SwiftUI 源码（App / L / Model / Views / StatusItem）、Info.plist、图标、*.lproj 语言资源
 helper/         fanctl.c（特权辅助程序）+ fancontrol-check（自检脚本）
 tools/          图标生成工具（makeicon.swift）
 build.sh        编译
@@ -153,7 +161,8 @@ make-pkg.sh     打包 pkg / dmg
 install.sh      直接安装（等价于 pkg）
 uninstall.sh    卸载
 render.swift    离屏渲染预览工具
-移植说明.md      面向用户的完整文档
+移植说明.md      面向用户的完整文档（中文）
+PORTING.md      同上，英文版
 CHANGELOG.md    更新日志
 LICENSE         BSD 3-Clause
 NOTICE          第三方组件归属声明
@@ -179,7 +188,7 @@ THIRD-PARTY/    gpufan 的许可证原文
   macOS 没有对外开放的写入接口。要改只能在 OpenCore 里注入软 PowerPlay 表。
 - 真 Mac、Apple Silicon 不适用。
 - 没有 Apple 开发者签名（作者没有证书），Gatekeeper 会拦。
-- **界面目前只有中文**，英文界面在计划中（见 [Roadmap](#roadmap)）。
+- 繁体中文（`zh-Hant`）用户目前看到的是简体界面 + 繁体 app 名，完整的 zh-Hant 翻译见 [Roadmap](#roadmap)。
 
 ---
 
@@ -207,10 +216,12 @@ THIRD-PARTY/    gpufan 的许可证原文
 
 ## Roadmap
 
-- **[英文界面](https://github.com/glassecho/FanControl-macOS/issues/1)** —— 目前界面文案是硬编码中文（175 条），
-  计划做完整 i18n（跟随系统语言）。**欢迎认领**，issue 里写了全部实现要点。
+- **繁体中文（zh-Hant）的完整翻译** —— 目前 zh-Hant 用户看到的是简体界面 + 繁体 app 名。
+  要做完整翻译，只要在 `app/L.swift` 里再加一个语言分支。
 - 更多 Super I/O 芯片的支持（目前只做 Nuvoton NCT679x / NCT6779D）。
 - 更细的曲线编辑器（多段、可导入导出）。
+
+> 英文界面（i18n）已在 **1.5.0** 完成，见 [#1](https://github.com/glassecho/FanControl-macOS/issues/1)。
 
 ---
 
@@ -239,14 +250,15 @@ THIRD-PARTY/    gpufan 的许可证原文
 
 # English
 
-**FanControl for Hackintosh** — motherboard fan control on macOS, with a Chinese GUI.
+**FanControl for Hackintosh** — motherboard fan control on macOS, with a bilingual GUI
+(English / Simplified Chinese).
 
 It gives hackintoshes the ability to control motherboard fans by temperature curve, by patching a gap in
 VirtualSMC's SMCSuperIO. Six modes (silent / standard / performance / full / manual / custom curve),
 plus read-only system and GPU monitoring and a menu-bar readout.
 
-> **The GUI and documentation are in Chinese.** English UI is on the roadmap —
-> see [#1](https://github.com/glassecho/FanControl-macOS/issues/1). English contributions are very welcome.
+> **The UI is bilingual (English / Simplified Chinese) and follows your system language** —
+> no setting to change. The app name in Finder and the Dock is localized too.
 
 ## The problem
 
@@ -288,7 +300,7 @@ System Settings → Privacy & Security and click **Open Anyway**.
 ## Install
 
 ```sh
-sudo installer -pkg FanControl-1.4.1.pkg -target /
+sudo installer -pkg FanControl-1.5.0.pkg -target /
 ```
 
 Then run the self-check to confirm your chip is supported:
@@ -297,7 +309,7 @@ Then run the self-check to confirm your chip is supported:
 zsh /usr/local/sbin/fancontrol-check
 ```
 
-**Two things you must do after installing** (see `移植说明.md`, Chinese):
+**Two things you must do after installing** (full walkthrough in [`PORTING.md`](PORTING.md)):
 
 1. Copy `/usr/local/share/fancontrol/SMCSuperIO.kext` into `EFI/OC/Kexts`, replacing the existing file,
    and register it in `config.plist → Kernel → Add`. **It must come after `VirtualSMC.kext`** —
@@ -314,11 +326,14 @@ it is either reading the GPU or it isn't working.
 
 ## Roadmap
 
-- **English UI** — tracked in [#1](https://github.com/glassecho/FanControl-macOS/issues/1). The interface
-  text is hardcoded Chinese today (175 strings); full i18n following the system language is planned.
-  Contributions welcome — the issue lists every implementation detail.
+- **Full Traditional Chinese (zh-Hant) translation** — zh-Hant users currently get the Simplified UI
+  with a Traditional app name. Adding a full translation only means one more language branch in
+  `app/L.swift`.
 - Support for more Super I/O chips (currently Nuvoton NCT679x / NCT6779D only).
 - A finer curve editor (multi-segment, import/export).
+
+> **The English UI shipped in 1.5.0** — tracked in
+> [#1](https://github.com/glassecho/FanControl-macOS/issues/1).
 
 ## Credits
 

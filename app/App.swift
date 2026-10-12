@@ -15,7 +15,7 @@ struct FanControlApp: App {
     private var controller: FanController { AppCore.controller }
 
     var body: some Scene {
-        WindowGroup("风扇控制", id: "main") {
+        WindowGroup(L.appName, id: "main") {
             ContentView(ctl: controller)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
         }
@@ -23,8 +23,8 @@ struct FanControlApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
-                Button("交还 BIOS 控制") { controller.returnToBIOS() }
-                Button("立即刷新") { controller.refresh() }
+                Button(L.headerReturnBIOS) { controller.returnToBIOS() }
+                Button(L.refreshTip) { controller.refresh() }
             }
         }
 

@@ -20,9 +20,9 @@ struct FanState: Decodable, Identifiable {
     /// 0 = BIOS 智能调速, 1 = 按转速闭环, 2 = 按占空比
     var modeLabel: String {
         switch Int(mode) {
-        case 1: return "手动·转速"
-        case 2: return "手动·占空比"
-        default: return "BIOS"
+        case 1: return L.fanModeManualRPM
+        case 2: return L.fanModeManualDuty
+        default: return L.fanModeBIOS
         }
     }
     var isManual: Bool { Int(mode) != 0 }
@@ -110,7 +110,7 @@ struct DiskInfo: Decodable, Identifiable {
     var ratio: Double { total > 0 ? min(1, used / total) : 0 }
     /// 挂载点显示名：根卷给个中文名，外置卷用卷名
     var name: String {
-        if mount == "/" { return "系统盘" }
+        if mount == "/" { return L.systemDisk }
         return (mount as NSString).lastPathComponent
     }
 }
@@ -145,14 +145,14 @@ enum PanelKind: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .cpu:       return "CPU"
-        case .gpu:       return "显卡"
-        case .memory:    return "内存"
-        case .storage:   return "存储"
-        case .network:   return "网络"
-        case .processes: return "进程"
-        case .sensors:   return "传感器"
-        case .system:    return "系统"
+        case .cpu:       return L.panelCPU
+        case .gpu:       return L.panelGPU
+        case .memory:    return L.panelMemory
+        case .storage:   return L.panelStorage
+        case .network:   return L.panelNetwork
+        case .processes: return L.panelProcesses
+        case .sensors:   return L.panelSensors
+        case .system:    return L.panelSystem
         }
     }
 
@@ -171,14 +171,14 @@ enum PanelKind: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .cpu:       return "总占用 · 每个核心 · 负载"
-        case .gpu:       return "显卡风扇 · 温度 · 功耗"
-        case .memory:    return "已用 · 联动 · 压缩 · 交换"
-        case .storage:   return "各卷已用空间"
-        case .network:   return "上行 / 下行速率"
-        case .processes: return "占用最高的进程"
-        case .sensors:   return "CPU / GPU 温度"
-        case .system:    return "机型 · 运行时间 · 负载"
+        case .cpu:       return L.panelCPUDetail
+        case .gpu:       return L.panelGPUDetail
+        case .memory:    return L.panelMemoryDetail
+        case .storage:   return L.panelStorageDetail
+        case .network:   return L.panelNetworkDetail
+        case .processes: return L.panelProcessesDetail
+        case .sensors:   return L.panelSensorsDetail
+        case .system:    return L.panelSystemDetail
         }
     }
 }
@@ -191,14 +191,14 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .icon:    return "风扇图标"
-        case .cpuTemp: return "CPU 温度"
-        case .gpuTemp: return "GPU 温度"
-        case .cpuLoad: return "CPU 占用"
-        case .memory:  return "内存"
-        case .fanRPM:  return "风扇转速"
-        case .gpuFan:  return "显卡风扇"
-        case .network: return "网络"
+        case .icon:    return L.mbIcon
+        case .cpuTemp: return L.mbCPUTemp
+        case .gpuTemp: return L.mbGPUTemp
+        case .cpuLoad: return L.mbCPULoad
+        case .memory:  return L.mbMemory
+        case .fanRPM:  return L.mbFanRPM
+        case .gpuFan:  return L.mbGPUFan
+        case .network: return L.mbNetwork
         }
     }
 
@@ -217,14 +217,14 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .icon:    return "只显示一个图标"
-        case .cpuTemp: return "最热核心的温度"
-        case .gpuTemp: return "显卡温度"
-        case .cpuLoad: return "总占用率"
-        case .memory:  return "已用比例"
-        case .fanRPM:  return "转得最快的受控风扇"
-        case .gpuFan:  return "显卡自身风扇转速"
-        case .network: return "下行速率"
+        case .icon:    return L.mbIconDetail
+        case .cpuTemp: return L.mbCPUTempDetail
+        case .gpuTemp: return L.mbGPUTempDetail
+        case .cpuLoad: return L.mbCPULoadDetail
+        case .memory:  return L.mbMemoryDetail
+        case .fanRPM:  return L.mbFanRPMDetail
+        case .gpuFan:  return L.mbGPUFanDetail
+        case .network: return L.mbNetworkDetail
         }
     }
 }
@@ -244,23 +244,23 @@ enum ControlMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .silent:      return "安静"
-        case .standard:    return "标准"
-        case .performance: return "性能"
-        case .full:        return "全速"
-        case .manual:      return "手动"
-        case .custom:      return "自定义曲线"
+        case .silent:      return L.modeSilent
+        case .standard:    return L.modeStandard
+        case .performance: return L.modePerformance
+        case .full:        return L.modeFull
+        case .manual:      return L.modeManual
+        case .custom:      return L.modeCustom
         }
     }
 
     var detail: String {
         switch self {
-        case .silent:      return "最低 10%，85°C 才拉满"
-        case .standard:    return "平衡，日常默认"
-        case .performance: return "提前提速，压制温度"
-        case .full:        return "固定 100% 占空比"
-        case .manual:      return "每个风扇一个固定占空比"
-        case .custom:      return "自己拖动曲线控制点"
+        case .silent:      return L.modeSilentDetail
+        case .standard:    return L.modeStandardDetail
+        case .performance: return L.modePerformanceDetail
+        case .full:        return L.modeFullDetail
+        case .manual:      return L.modeManualDetail
+        case .custom:      return L.modeCustomDetail
         }
     }
 
@@ -369,7 +369,7 @@ final class FanController: ObservableObject {
     /// 以前这里、Info.plist、make-pkg.sh 三处各写一遍，改了 plist 忘了改这里，
     /// 界面上就会显示旧版本号。现在统一从 Bundle 读，改版本只需动 Info.plist。
     static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L.unknown
     }
 
     /// 只读操作可以走任意一份 fanctl；写操作必须走已安装的那份（sudoers 只授权了它）。
@@ -447,7 +447,7 @@ final class FanController: ObservableObject {
         p.standardOutput = o
         p.standardError = e
         do { try p.run() } catch {
-            return (-1, "", "无法执行 \(exe): \(error.localizedDescription)")
+            return (-1, "", L.cannotRun(exe, error.localizedDescription))
         }
 
         // stdout 与 stderr 必须**同时**排空。
@@ -507,7 +507,7 @@ final class FanController: ObservableObject {
             DispatchQueue.main.async {
                 self.refreshing = false
                 if let snap = snap { self.ingest(snap) }
-                else { self.message = err.isEmpty ? "读取状态失败" : err }
+                else { self.message = err.isEmpty ? L.msgReadFailed : err }
                 if let sysInfo = sysInfo { self.ingest(sysInfo) }
             }
         }
@@ -564,29 +564,33 @@ final class FanController: ObservableObject {
     func apply() {
         guard snapshot != nil else { return }
         let fans = selectedFans.sorted()
-        guard !fans.isEmpty else { message = "请至少勾选一个风扇"; return }
+        guard !fans.isEmpty else { message = L.msgNeedFan; return }
 
         busy = true
         let isManual = (mode == .manual)
 
         DispatchQueue.global().async {
             var log: [String] = []
+            /// 辅助程序没装、或 sudoers 没配 —— 由**退出码**判断。
+            /// 以前是 `text.contains("安装")`：文案一改就失效，界面切成英文后更是必然失效。
+            var helperMissing = false
 
             if isManual {
                 log.append(self.runSudo(["daemon", "stop"]).out)
                 for ch in fans {
                     let d = Int((self.manualDuty[ch] ?? 40).rounded())
                     let r = self.runSudo(["duty", String(ch), String(d)])
-                    log.append("ch\(ch) -> \(d)% \(r.code == 0 ? "ok" : "失败")")
+                    if r.code != 0 { helperMissing = true }
+                    log.append(r.code == 0 ? L.logOK(ch, d) : L.logFail(ch, d))
                 }
             } else {
-                var conf = "# 由 FanControl 生成\n"
+                var conf = "# generated by FanControl\n"
                 conf += "fans = " + fans.map(String.init).joined(separator: ",") + "\n\n"
                 let c = self.curveString(self.activeCurve())
                 if self.useCPU { conf += "source = \(self.cpuChoice.keyString) : \(c)\n" }
                 if self.useGPU { conf += "source = \(self.gpuChoice.keyString) : \(c)\n" }
                 if !self.useCPU && !self.useGPU {
-                    DispatchQueue.main.async { self.busy = false; self.message = "请至少勾选一个温度来源" }
+                    DispatchQueue.main.async { self.busy = false; self.message = L.msgNeedTempSource }
                     return
                 }
                 conf += """
@@ -609,7 +613,8 @@ final class FanController: ObservableObject {
                 log.append(r1.out.isEmpty ? r1.err : r1.out)
                 log.append(r2.out.isEmpty ? r2.err : r2.out)
                 if r1.code != 0 || r2.code != 0 {
-                    log.append("提示：需要先安装辅助程序（见安装脚本）")
+                    log.append(L.msgNeedInstall)
+                    helperMissing = true
                 }
             }
 
@@ -617,8 +622,8 @@ final class FanController: ObservableObject {
             DispatchQueue.main.async {
                 self.busy = false
                 self.appliedMode = self.mode
-                self.message = text.isEmpty ? "已应用：\(self.mode.label)" : "已应用：\(self.mode.label) · \(text)"
-                self.needsInstall = text.contains("安装")
+                self.message = text.isEmpty ? L.applied(self.mode.label) : L.appliedWith(self.mode.label, text)
+                self.needsInstall = helperMissing
                 self.refresh()
             }
         }
@@ -632,7 +637,7 @@ final class FanController: ObservableObject {
             DispatchQueue.main.async {
                 self.busy = false
                 self.appliedMode = nil
-                self.message = r.code == 0 ? "已交还 BIOS 控制" : "交还失败：\(r.err)"
+                self.message = r.code == 0 ? L.msgReturnedBIOS : L.returnFailed(r.err)
                 self.refresh()
             }
         }
@@ -675,11 +680,11 @@ final class FanController: ObservableObject {
             .sorted { $0.n < $1.n }
 
         for c in cores {
-            out.append(SensorItem(key: c.key, label: "核心 \(c.n)", value: c.value))
+            out.append(SensorItem(key: c.key, label: L.core(c.n), value: c.value))
         }
 
-        if let v = snapshot?.sensor("TG0D") { out.append(SensorItem(key: "TG0D", label: "GPU 核心", value: v)) }
-        if let v = snapshot?.sensor("TG0P") { out.append(SensorItem(key: "TG0P", label: "GPU 板边", value: v)) }
+        if let v = snapshot?.sensor("TG0D") { out.append(SensorItem(key: "TG0D", label: L.gpuCoreSensor, value: v)) }
+        if let v = snapshot?.sensor("TG0P") { out.append(SensorItem(key: "TG0P", label: L.gpuEdgeSensor, value: v)) }
         return out
     }
 
@@ -736,11 +741,9 @@ final class FanController: ObservableObject {
             } else {
                 if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
             }
-            message = on
-                ? "已设为开机自启 —— 开机后会自动打开主窗口，关掉即可，菜单栏图标会保留"
-                : "已关闭开机自启"
+            message = on ? L.msgLaunchOn : L.msgLaunchOff
         } catch {
-            message = "设置开机自启失败：\(error.localizedDescription)"
+            message = L.launchFailed(error.localizedDescription)
         }
         refreshLaunchAtLogin()
     }
@@ -759,12 +762,12 @@ final class FanController: ObservableObject {
     }
 
     var statusText: String {
-        guard let s = snapshot else { return "读取中…" }
-        if let m = appliedMode, s.service.running { return "自动 · \(m.label)" }
-        if s.service.running { return "自动调速运行中" }
+        guard let s = snapshot else { return L.reading }
+        if let m = appliedMode, s.service.running { return L.autoWith(m.label) }
+        if s.service.running { return L.statusAutoRunning }
         let manual = s.fans.contains { $0.isManual }
-        if manual { return "手动" }
-        return "BIOS 控制"
+        if manual { return L.statusManual }
+        return L.statusBIOS
     }
 
     var statusColor: StatusColor {
@@ -793,18 +796,18 @@ struct SensorChoice: Identifiable, Hashable {
     /// 直接拿来控速会让风扇几秒内反复拉高又降下来，很吵。
     static let cpuChoices: [SensorChoice] = [
         .init(keys: ["TC0C", "TC1C", "TC2C", "TC3C", "TC4C", "TC5C", "TC6C", "TC7C"],
-              short: "8 核心",
-              label: "CPU 8 个核心，取最热 —— 平滑，推荐"),
+              short: L.sensorCPU8Cores,
+              label: L.sensorCPU8CoresLabel),
         .init(keys: ["TC0P"],
-              short: "封装",
-              label: "CPU 封装 (TC0P) —— 反应快但抖动大，容易让风扇忽高忽低"),
+              short: L.sensorCPUPackage,
+              label: L.sensorCPUPackageLabel),
     ]
     static let gpuChoices: [SensorChoice] = [
         .init(keys: ["TG0D", "TG0P"],
-              short: "核心+板边",
-              label: "GPU 核心与板边，取最热"),
+              short: L.sensorGPUEdge,
+              label: L.sensorGPUEdgeLabel),
         .init(keys: ["TG0D"],
-              short: "核心",
-              label: "GPU 核心 (TG0D)"),
+              short: L.sensorGPUCore,
+              label: L.sensorGPUCoreLabel),
     ]
 }

@@ -1,10 +1,13 @@
 // 离屏渲染工具：把界面渲染成 PNG，用于自检与预览。
 //
 //   swiftc -O -parse-as-library -target x86_64-apple-macos13.0 -sdk "$(xcrun --show-sdk-path)" \
-//     -o /tmp/render app/Model.swift app/Views.swift render.swift \
+//     -o /tmp/render app/L.swift app/Model.swift app/Views.swift render.swift \
 //     -framework SwiftUI -framework AppKit -framework Foundation
 //
 // 用 FANCTL_PATH 指向未安装的新版 helper 就能预览新字段。
+// 用 FANCONTROL_LANG=en / zh 切换界面语言：
+//   FANCONTROL_LANG=zh /tmp/render preview     # 中文全套 01–08
+//   FANCONTROL_LANG=en /tmp/render preview     # 英文 09–10（给 README 的 English 段用）
 //
 // ⚠️ 输出文件名不要随便改。
 // preview/ 里的 01–04 已经发到 GitHub，并被贴吧 / 各平台的帖子用
@@ -66,9 +69,21 @@ struct RenderMain {
         }
 
         let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp"
-        print("渲染到 \(outDir)：")
+        let isEN = (L.lang == .en)
+        print("渲染到 \(outDir)（语言：\(isEN ? "en" : "zh")）：")
 
-        // ── 01–04：名字沿用仓库里已有的，覆盖更新成 1.4.1 界面 ──────────────
+        // ── 英文：只出 2 张，给 README 的 English 段用 ────────────────────
+        // 中英各出一整套会把仓库体积翻倍，而且英文读者只需要看清「界面长什么样」。
+        if isEN {
+            ctl.mode = .standard
+            ctl.minDuty = ControlMode.standard.minDuty
+            shoot(ContentView(ctl: ctl), outDir, "09-control-en.png", w: 1160, h: 870)
+            shoot(ContentView(ctl: ctl, startPage: 1, scrollMonitor: false),
+                  outDir, "10-monitor-en.png", w: 1160, h: 870)
+            return
+        }
+
+        // ── 中文：01–04 名字沿用仓库里已有的，覆盖更新 ────────────────────
         // 已发出去的 jsDelivr 链接走 @main 分支，重推后会自动跟着变新。
 
         ctl.mode = .standard

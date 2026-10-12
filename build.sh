@@ -50,7 +50,7 @@ for a in "${ARCHS[@]}"; do
     -target "$a-apple-macos13.0" \
     -sdk "$SDK" \
     -o "$OUT/FanControl-$a" \
-    "$APP/App.swift" "$APP/Model.swift" "$APP/Views.swift" "$APP/StatusItem.swift" \
+    "$APP/App.swift" "$APP/L.swift" "$APP/Model.swift" "$APP/Views.swift" "$APP/StatusItem.swift" \
     -framework SwiftUI -framework AppKit -framework Foundation
   SLICES+=("$OUT/FanControl-$a")
 done
@@ -72,6 +72,22 @@ if [ ! -f "$APP/AppIcon.icns" ]; then
   zsh "$HERE/make-icon.sh"
 fi
 cp "$APP/AppIcon.icns" "$BUNDLE/Contents/Resources/AppIcon.icns"
+
+# 界面语言资源：app/*.lproj/InfoPlist.strings
+#
+# ⚠️ 这里只影响 **Finder / 程序坞 / 菜单栏里显示的 app 名字**。
+# 界面文案全部在 app/L.swift 里，直接编进二进制，不需要 bundle 资源。
+# 但 app 名字走的是 Cocoa 的 bundle 本地化机制，必须真的放 .lproj 目录 ——
+# 少了这一份，英文系统下 app 名字仍会显示成「风扇控制」。
+for lp in "$APP"/*.lproj(N); do
+  name=$(basename "$lp")
+  cp -R "$lp" "$BUNDLE/Contents/Resources/"
+  # 转成二进制 plist：文本版 .strings 在部分路径下读不到，转一下最稳
+  for f in "$BUNDLE/Contents/Resources/$name/"*.strings(N); do
+    plutil -convert binary1 "$f" 2>/dev/null || true
+  done
+  echo "   -> $name"
+done
 
 cp "$HELPER/fanctl" "$BUNDLE/Contents/Resources/fanctl"
 cp "$HELPER/fancontrol-check" "$BUNDLE/Contents/Resources/fancontrol-check"
