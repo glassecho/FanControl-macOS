@@ -4,11 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hans</string>
-	<!-- 支持的语言由 app/en.lproj/ 与 app/zh-Hans.lproj/ 两个目录声明，
-	     不在这里再写一份 CFBundleLocalizations —— 两边都写会让
-	     Bundle.localizations 出现重复项（en, en, zh-Hans, zh-Hans）。
-	     这两个 .lproj 里的 InfoPlist.strings 覆盖 Finder / 程序坞 /
-	     菜单栏里显示的 app 名字；界面文案在 L.swift 里，编译进二进制。 -->
+	<key>CFBundleDisplayName</key>
+	<string>风扇控制</string>
 	<key>CFBundleExecutable</key>
 	<string>FanControl</string>
 	<key>CFBundleIconFile</key>
@@ -19,21 +16,19 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>风扇控制</string>
-	<key>CFBundleDisplayName</key>
-	<string>风扇控制</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5.1</string>
+	<string>1.6.0</string>
 	<key>CFBundleVersion</key>
-	<string>17</string>
+	<string>20</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>风扇控制 · 基于 gpufan (BSD-3-Clause) 的 SMCSuperIO 与 gpufand</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 </dict>
 </plist>

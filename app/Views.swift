@@ -237,13 +237,19 @@ struct PlotGeom {
     }
 
     func px(_ t: Double) -> CGFloat {
+        // NaN/∞ 直接落回起点：Swift 的 max/min 遇 NaN 会把 NaN 原样传出去，
+        // 一旦进了 Path 坐标就是未定义行为
+        guard t.isFinite else { return padL }
         let span = maxTemp - minTemp
-        guard span > 0 else { return padL }
-        return padL + CGFloat((t - minTemp) / span) * plotW
+        guard span.isFinite, span > 0 else { return padL }
+        let x = padL + CGFloat((t - minTemp) / span) * plotW
+        return x.isFinite ? x : padL
     }
 
     func py(_ d: Double) -> CGFloat {
-        padT + plotH - CGFloat(d / 100.0) * plotH
+        guard d.isFinite else { return padT + plotH }
+        let y = padT + plotH - CGFloat(min(max(d, 0), 100) / 100.0) * plotH
+        return y.isFinite ? y : padT + plotH
     }
 }
 
@@ -602,7 +608,8 @@ struct FlexBar: View {
                 Capsule().fill(Theme.panel2)
                     .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
                 Capsule().fill(tint)
-                    .frame(width: max(2, geo.size.width * min(max(ratio, 0), 1)))
+                    // ratio 为 NaN 时宽度会变成 NaN，CoreGraphics 会拒绝这一帧
+                    .frame(width: max(2, geo.size.width * (ratio.isFinite ? min(max(ratio, 0), 1) : 0)))
             }
             .frame(height: geo.size.height)
         }
@@ -614,27 +621,47 @@ struct FlexBar: View {
 struct Sparkline: View {
     let values: [Double]
     var tint: Color = Theme.accent
+    /// 显存告急时置 false：**不建 Canvas**。
+    /// Canvas 每个绘制周期都要重新分配画布与路径对象，显存见底时这一步最容易失败。
+    var enabled: Bool = true
 
     var body: some View {
-        Canvas { ctx, size in
-            guard values.count > 1 else { return }
-            let top = max(20.0, values.max() ?? 20)
-            var line = Path()
-            for (i, v) in values.enumerated() {
-                let x = size.width * CGFloat(i) / CGFloat(values.count - 1)
-                let y = size.height - size.height * CGFloat(min(max(v, 0), top) / top)
-                if i == 0 { line.move(to: CGPoint(x: x, y: y)) }
-                else { line.addLine(to: CGPoint(x: x, y: y)) }
+        Group {
+            if enabled {
+                Canvas { ctx, size in
+                    // NaN / ∞ 一律剔除，剩下的才进坐标计算。
+                    // 以前这里只挡了 count > 1 和除零，NaN 会穿过 min(max(...)) 直抵 Path。
+                    let pts = values.filter { $0.isFinite }.map { min(max($0, 0), 1_000_000) }
+                    guard pts.count > 1 else { return }
+                    let top = max(20.0, pts.max() ?? 20)
+                    guard top.isFinite, top > 0, size.width > 0, size.height > 0 else { return }
+                    var line = Path()
+                    for (i, v) in pts.enumerated() {
+                        let x = size.width * CGFloat(i) / CGFloat(pts.count - 1)
+                        let y = size.height - size.height * CGFloat(v / top)
+                        if i == 0 { line.move(to: CGPoint(x: x, y: y)) }
+                        else { line.addLine(to: CGPoint(x: x, y: y)) }
+                    }
+                    var fill = line
+                    fill.addLine(to: CGPoint(x: size.width, y: size.height))
+                    fill.addLine(to: CGPoint(x: 0, y: size.height))
+                    fill.closeSubpath()
+                    ctx.fill(fill, with: .linearGradient(
+                        Gradient(colors: [tint.opacity(0.32), tint.opacity(0.02)]),
+                        startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+                    ctx.stroke(line, with: .color(tint),
+                               style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                }
+            } else {
+                // 降级态：**不建 Canvas**，只摆一块静态色块。
+                // 高度照旧，面板布局不会跳。
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Theme.panel2.opacity(0.6))
+                    .overlay(
+                        Text(L.chartPaused)
+                            .font(.system(size: 9)).foregroundStyle(Theme.dim)
+                    )
             }
-            var fill = line
-            fill.addLine(to: CGPoint(x: size.width, y: size.height))
-            fill.addLine(to: CGPoint(x: 0, y: size.height))
-            fill.closeSubpath()
-            ctx.fill(fill, with: .linearGradient(
-                Gradient(colors: [tint.opacity(0.32), tint.opacity(0.02)]),
-                startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
-            ctx.stroke(line, with: .color(tint),
-                       style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
         }
     }
 }
@@ -678,6 +705,8 @@ struct CoreCell: View {
 struct CpuPanel: View {
     let cpu: CpuInfo
     let history: [Double]
+    /// 显存告急时关掉走势图（由 FanController.vramLow 决定）
+    var chartEnabled: Bool = true
 
     var body: some View {
         Card(padding: 13) {
@@ -710,7 +739,7 @@ struct CpuPanel: View {
                     }
                 }
 
-                Sparkline(values: history, tint: loadTint(cpu.total))
+                Sparkline(values: history, tint: loadTint(cpu.total), enabled: chartEnabled)
                     .frame(height: 34)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -990,6 +1019,11 @@ struct SystemPanel: View {
 /// 显卡面板（只读监控）。显卡风扇由显卡固件管理，本程序不参与调速。
 struct GpuPanel: View {
     let g: GpuState
+    /// 显存读数。来自 `ioreg`，和 GPU 传感器（SMC）不是同一条路径，
+    /// 所以单独传进来而不是塞进 GpuState。
+    var vramFreeBytes: Int64? = nil
+    var vramUsedRatio: Double? = nil
+    var vramLow: Bool = false
 
     var body: some View {
         Card(padding: 13) {
@@ -1028,6 +1062,22 @@ struct GpuPanel: View {
                     }
                 }
 
+                // 显存占用条 —— 这台机器上「别的程序莫名其妙崩」的源头就在这一行
+                if let free = vramFreeBytes, let ratio = vramUsedRatio {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 5) {
+                            Text(L.vramLabel)
+                                .font(.system(size: 10)).foregroundStyle(Theme.dim)
+                            Spacer(minLength: 4)
+                            Text(String(format: "%.0f%% · %lld MB", ratio * 100, free / 1_048_576))
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(vramLow ? Theme.orange : Theme.dim)
+                                .monospacedDigit()
+                        }
+                        FlexBar(ratio: ratio, tint: vramLow ? Theme.orange : Theme.accent, height: 4)
+                    }
+                }
+
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10)).foregroundStyle(Theme.dim)
@@ -1059,38 +1109,80 @@ struct MonitorPanels: View {
                 }
             }
         } else {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(spacing: 14) {
-                    if ctl.panel(.cpu), let c = ctl.cpuInfo {
-                        CpuPanel(cpu: c, history: ctl.cpuHistory)
-                    }
-                    if ctl.panel(.memory), let m = ctl.memInfo {
-                        MemoryPanel(mem: m)
-                    }
-                    if ctl.panel(.network), let n = ctl.sys?.net {
-                        NetworkPanel(iface: n.iface, down: ctl.netDown, up: ctl.netUp)
-                    }
-                    if ctl.panel(.sensors) {
-                        SensorPanel(items: ctl.sensorItems)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
+            VStack(spacing: 14) {
+                // 显存告急时的降级提示。不弹窗、不挡操作，只把事实摆出来 ——
+                // 这台机器上把显存吃干的通常是 Lightroom 的 AI 推理。
+                if ctl.vramLow { VRAMWarningCard(ctl: ctl) }
 
-                VStack(spacing: 14) {
-                    if ctl.panel(.gpu), let g = ctl.gpu {
-                        GpuPanel(g: g)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(spacing: 14) {
+                        if ctl.panel(.cpu), let c = ctl.cpuInfo {
+                            CpuPanel(cpu: c, history: ctl.cpuHistory, chartEnabled: !ctl.vramLow)
+                        }
+                        if ctl.panel(.memory), let m = ctl.memInfo {
+                            MemoryPanel(mem: m)
+                        }
+                        if ctl.panel(.network), let n = ctl.sys?.net {
+                            NetworkPanel(iface: n.iface, down: ctl.netDown, up: ctl.netUp)
+                        }
+                        if ctl.panel(.sensors) {
+                            SensorPanel(items: ctl.sensorItems)
+                        }
                     }
-                    if ctl.panel(.processes) {
-                        ProcessPanel(procs: ctl.procs)
+                    .frame(maxWidth: .infinity, alignment: .top)
+
+                    VStack(spacing: 14) {
+                        if ctl.panel(.gpu), let g = ctl.gpu {
+                            GpuPanel(g: g,
+                                     vramFreeBytes: ctl.vramFreeBytes,
+                                     vramUsedRatio: ctl.vramUsedRatio,
+                                     vramLow: ctl.vramLow)
+                        }
+                        if ctl.panel(.processes) {
+                            ProcessPanel(procs: ctl.procs)
+                        }
+                        if ctl.panel(.storage) {
+                            StoragePanel(disks: ctl.disks)
+                        }
+                        if ctl.panel(.system), let c = ctl.cpuInfo {
+                            SystemPanel(cpu: c, version: FanController.version)
+                        }
                     }
-                    if ctl.panel(.storage) {
-                        StoragePanel(disks: ctl.disks)
-                    }
-                    if ctl.panel(.system), let c = ctl.cpuInfo {
-                        SystemPanel(cpu: c, version: FanController.version)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+            }
+        }
+    }
+}
+
+/// 显存告急横幅：只读提示 + 一个「立即重读」按钮
+struct VRAMWarningCard: View {
+    @ObservedObject var ctl: FanController
+
+    var body: some View {
+        Card(padding: 11) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L.vramLowTitle)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(L.vramLowBody(freeMB: (ctl.vramFreeBytes ?? 0) / 1_048_576,
+                                       ratio: ctl.vramUsedRatio))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 6)
+                Button {
+                    ctl.updateVRAM()
+                } label: {
+                    Text(L.refreshTip).font(.system(size: 10.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
     }
@@ -1162,6 +1254,12 @@ struct MenuBarPanel: View {
                 .font(.system(size: 14)).foregroundStyle(Theme.accent)
             Text(L.appName)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            // 版本号紧跟在名字后面：只用菜单栏、从不开主窗口的人也能看见装的是哪一版。
+            Text("v\(FanController.version)")
+                .font(.system(size: 9.5, design: .rounded))
+                .foregroundStyle(Theme.dim.opacity(0.8))
+                .monospacedDigit()
+                .help(FanController.versionText)
             Spacer(minLength: 6)
             HStack(spacing: 5) {
                 Circle().fill(statusTint).frame(width: 6, height: 6)
@@ -1410,10 +1508,10 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionTitle(text: L.tempSourceSection)
                     sensorRow(title: "CPU", on: $ctl.useCPU, choice: $ctl.cpuChoice,
-                              choices: SensorChoice.cpuChoices, temp: ctl.cpuTemp, tint: tempTint(ctl.cpuTemp))
+                              choices: ctl.cpuChoices, temp: ctl.cpuTemp, tint: tempTint(ctl.cpuTemp))
                     Divider().overlay(Theme.stroke)
                     sensorRow(title: "GPU", on: $ctl.useGPU, choice: $ctl.gpuChoice,
-                              choices: SensorChoice.gpuChoices, temp: ctl.gpuTemp, tint: tempTint(ctl.gpuTemp))
+                              choices: ctl.gpuChoices, temp: ctl.gpuTemp, tint: tempTint(ctl.gpuTemp))
                     Text(L.tempSourceHint)
                         .font(.system(size: 10)).foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1459,7 +1557,54 @@ struct ContentView: View {
                     .buttonStyle(.bordered)
                 }
 
-                Text(L.panelSectionHint)
+                Text(L.panelSectionHint(ctl.pollInterval))
+                    .font(.system(size: 10)).foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider().overlay(Theme.stroke)
+
+                // MARK: 性能
+                SectionTitle(text: L.performanceSection)
+
+                HStack(spacing: 6) {
+                    Text(L.pollIntervalLabel)
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.text)
+                    Spacer(minLength: 4)
+                    ForEach([1.0, 2.0, 3.0, 5.0, 10.0], id: \.self) { s in
+                        Button {
+                            ctl.pollInterval = s
+                        } label: {
+                            Text(L.pollIntervalValue(s))
+                                .font(.system(size: 10))
+                                .frame(minWidth: 26)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(ctl.pollInterval == s ? Theme.accent : nil)
+                        .controlSize(.small)
+                    }
+                }
+
+                // 显存实时读数 —— 显存被别的程序吃干时，这里是第一现场
+                if let free = ctl.vramFreeBytes {
+                    HStack(spacing: 5) {
+                        Image(systemName: "memorychip")
+                            .font(.system(size: 10))
+                            .foregroundStyle(ctl.vramLow ? Theme.orange : Theme.dim)
+                        Text("\(L.vramLabel) \(free / 1_048_576) MB")
+                            .font(.system(size: 10.5, design: .rounded))
+                            .foregroundStyle(ctl.vramLow ? Theme.orange : Theme.dim)
+                            .monospacedDigit()
+                        if let r = ctl.vramUsedRatio {
+                            Text(String(format: "· %.0f%%", r * 100))
+                                .font(.system(size: 10.5, design: .rounded))
+                                .foregroundStyle(ctl.vramLow ? Theme.orange : Theme.dim)
+                                .monospacedDigit()
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+
+                Text(L.pollIntervalHint)
                     .font(.system(size: 10)).foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1611,7 +1756,7 @@ struct ContentView: View {
                     HStack {
                         SectionTitle(text: L.fanChannelSection)
                         Spacer()
-                        Text(L.fanChannelHint)
+                        Text(L.fanChannelHint(ctl.pollInterval))
                             .font(.system(size: 10)).foregroundStyle(Theme.dim)
                     }
                     .padding(.bottom, 4)
@@ -1727,6 +1872,23 @@ struct ContentView: View {
                     helpLine("lock.shield", Theme.dim,
                              L.helpSudo)
                 }
+
+                Divider().overlay(Theme.stroke)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "shippingbox")
+                        .font(.system(size: 10)).foregroundStyle(Theme.dim)
+                        .frame(width: 14)
+                    Text(L.versionLine(FanController.version, FanController.build))
+                        .font(.system(size: 10.5, design: .rounded))
+                        .foregroundStyle(Theme.dim)
+                        .monospacedDigit()
+                    Spacer(minLength: 0)
+                }
+                Text(L.helpCredits)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.dim.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1752,6 +1914,16 @@ struct ContentView: View {
                 .foregroundStyle(ctl.needsInstall ? Theme.orange : Theme.dim)
                 .lineLimit(2)
             Spacer()
+            // 版本号常显在底栏右侧 —— 以前只在监控页「系统」面板里，等于看不见。
+            // 悬停显示带构建号的完整版本，报问题时可以直接念出来。
+            Text("v\(FanController.version)")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(Theme.dim)
+                .monospacedDigit()
+                .help(FanController.versionText)
+            Text("·")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.dim.opacity(0.55))
             Text(L.footerHint)
                 .font(.system(size: 10)).foregroundStyle(Theme.dim)
         }

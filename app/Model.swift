@@ -346,14 +346,70 @@ final class FanController: ObservableObject {
     /// CPU 总占用历史，画迷你走势图用
     @Published var cpuHistory: [Double] = []
 
+    // MARK: 显存状态
+
+    /// 剩余显存（字节）。nil = 读不到（核显机器 / 无独显 / ioreg 不可用）
+    @Published private(set) var vramFreeBytes: Int64?
+    /// 显存总量（字节），由「剩余 + 占用 + 可回收」推出来，用于算占用率
+    @Published private(set) var vramTotalBytes: Int64?
+    /// 显存告急。此时主动降级：**停止重绘走势图**、拉长轮询间隔。
+    ///
+    /// 为什么需要这个：macOS 没有 Windows WDDM 那层显存虚拟化，一个程序把显存占满
+    /// （典型是 Lightroom 的 AI 推理，只进不出），别的程序一申请就失败 ——
+    /// 表现就是本 app 在 SwiftUI 渲染时被系统直接干掉。降级不解决问题本身，
+    /// 但能让本 app 在显存见底时不跟着死。
+    @Published private(set) var vramLow = false
+
+    /// 进入低显存模式的阈值：1 GB。
+    ///
+    /// 可用环境变量覆盖，方便在显存宽裕的机器上**强制验证降级路径**
+    /// （降级分支平时根本不会走到，不测等于没写）：
+    /// ```
+    /// launchctl setenv FANCONTROL_VRAM_LOW_MB 999999   # 立刻进入降级态
+    /// open -n /Applications/FanControl.app
+    /// launchctl unsetenv FANCONTROL_VRAM_LOW_MB
+    /// ```
+    static let vramLowBytes: Int64 = {
+        if let s = ProcessInfo.processInfo.environment["FANCONTROL_VRAM_LOW_MB"],
+           let mb = Int64(s), mb > 0 {
+            return mb * 1_048_576
+        }
+        return 1_024 * 1_024 * 1_024
+    }()
+    /// 恢复正常模式的阈值：低阈值的两倍。留一倍回差，避免在边界上反复抖动
+    static let vramRecoverBytes: Int64 = vramLowBytes * 2
+
+    /// 轮询间隔（秒），可调并持久化。
+    /// 旧版写死 2 秒 —— 8 个面板每 2 秒全量重绘一次，显存紧张时等于持续敲门。
+    @Published var pollInterval: Double = 3.0 {
+        didSet {
+            guard pollInterval != oldValue else { return }
+            UserDefaults.standard.set(pollInterval, forKey: Self.pollKey)
+            if timer != nil { startPolling() }
+        }
+    }
+
+    /// 低显存时实际用的间隔：不低于 8 秒。降级期间少画一次就少一次风险
+    var effectiveInterval: Double { vramLow ? max(pollInterval, 8.0) : pollInterval }
+
+    /// 显存占用率（0…1），读不到总量时给 nil
+    var vramUsedRatio: Double? {
+        guard let f = vramFreeBytes, let t = vramTotalBytes, t > 0 else { return nil }
+        return min(max(1.0 - Double(f) / Double(t), 0), 1)
+    }
+
     @Published var mode: ControlMode = .standard
     /// 曲线模式下的占空比下限（%）。切换模式时会重置为该模式的预设值，之后可手动微调。
     @Published var minDuty: Double = ControlMode.standard.minDuty
     @Published var selectedFans: Set<Int> = []
     @Published var useCPU = true
     @Published var useGPU = true
-    @Published var cpuChoice: SensorChoice = SensorChoice.cpuChoices[0]
-    @Published var gpuChoice: SensorChoice = SensorChoice.gpuChoices[0]
+    /// 温度来源候选。**按机器实际暴露的传感器生成** —— 核心数不是 8 的机器
+    /// 以前会带上不存在的 TC6C/TC7C，按钮上还写着「8 核心」。
+    @Published private(set) var cpuChoices: [SensorChoice] = SensorChoice.cpuChoices(available: [])
+    @Published private(set) var gpuChoices: [SensorChoice] = SensorChoice.gpuChoices(available: [])
+    @Published var cpuChoice: SensorChoice = .placeholder
+    @Published var gpuChoice: SensorChoice = .placeholder
     @Published var manualDuty: [Int: Double] = [:]
     @Published var customPoints: [CurvePoint] = [
         .init(temp: 45, duty: 25), .init(temp: 65, duty: 60), .init(temp: 80, duty: 100)
@@ -369,7 +425,21 @@ final class FanController: ObservableObject {
     /// 以前这里、Info.plist、make-pkg.sh 三处各写一遍，改了 plist 忘了改这里，
     /// 界面上就会显示旧版本号。现在统一从 Bundle 读，改版本只需动 Info.plist。
     static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L.unknown
+        // 离屏渲染编出来的是裸二进制、没有 Info.plist，Bundle 里读不到版本号。
+        // 给它留一个环境变量覆盖（render.swift 会传），免得预览图上前端显示「v?」。
+        if let o = ProcessInfo.processInfo.environment["FANCONTROL_VERSION"], !o.isEmpty { return o }
+        return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L.unknown
+    }
+
+    /// 构建号（Info.plist 的 CFBundleVersion）。同一个版本号可能编出多个包，
+    /// 报问题时带上它能分清是哪一次构建 —— 悬停底栏版本号即可看到。
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    }
+
+    /// 「v1.5.1」/「v1.5.1 (17)」，构建号缺失时只显示版本号。
+    static var versionText: String {
+        build.isEmpty ? "v\(version)" : "v\(version) (\(build))"
     }
 
     /// 只读操作可以走任意一份 fanctl；写操作必须走已安装的那份（sudoers 只授权了它）。
@@ -391,6 +461,7 @@ final class FanController: ObservableObject {
     }
 
     private var timer: Timer?
+    private var vramTimer: Timer?
     private let work = DispatchQueue(label: "com.fancontrol.refresh", qos: .utility)
     private var refreshing = false
 
@@ -399,12 +470,23 @@ final class FanController: ObservableObject {
 
     private static let panelsKey = "fancontrol.enabledPanels"
     private static let menuBarKey = "fancontrol.menuBarItems"
+    private static let pollKey = "fancontrol.pollInterval"
 
     static func loadPanels() -> Set<PanelKind> {
         guard let raw = UserDefaults.standard.array(forKey: panelsKey) as? [String] else {
-            return Set(PanelKind.allCases)      // 首次运行：全开
+            // 首次运行：**不再全开 8 个面板**。
+            // 每块面板都是一套 SwiftUI 图层，全开等于把渲染面积拉满，
+            // 显存紧张时最先倒的就是它。默认只留最常看的四个。
+            return [.cpu, .gpu, .sensors, .memory]
         }
         return Set(raw.compactMap { PanelKind(rawValue: $0) })
+    }
+
+    static func loadPollInterval() -> Double {
+        let v = UserDefaults.standard.double(forKey: pollKey)
+        // 0 表示没存过；顺手夹到合理区间，防止有人写坏 plist 把轮询搞成 0.01 秒
+        guard v > 0 else { return 3.0 }
+        return min(max(v, 1.0), 30.0)
     }
 
     private static func savePanels(_ s: Set<PanelKind>) {
@@ -425,15 +507,89 @@ final class FanController: ObservableObject {
     init() {
         enabledPanels = Self.loadPanels()
         menuBarItems = Self.loadMenuBar()
+        pollInterval = Self.loadPollInterval()
         refresh()
         startPolling()
+        startVRAMPolling()
     }
 
     func startPolling() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: effectiveInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+        // 容差让系统把唤醒攒到一起发，省电也少一次渲染机会
+        t.tolerance = min(1.0, effectiveInterval * 0.2)
+        timer = t
+    }
+
+    // MARK: 显存轮询
+
+    /// 显存单独一条定时器：15 秒一次就够，不该拖慢温度主轮询。
+    /// 单独跑还有个好处 —— 窗口没开、主轮询在降级时，显存状态照样更新。
+    func startVRAMPolling() {
+        vramTimer?.invalidate()
+        updateVRAM()            // 立刻取一次，别等第一个周期
+        let t = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+            self?.updateVRAM()
+        }
+        t.tolerance = 3.0
+        vramTimer = t
+    }
+
+    /// 读一次显存状态。要起一个 `ioreg` 子进程，放后台队列，别堵主线程。
+    func updateVRAM() {
+        work.async { [weak self] in
+            guard let self = self else { return }
+            let (free, total) = self.readVRAM()
+            DispatchQueue.main.async {
+                self.vramFreeBytes = free
+                self.vramTotalBytes = total
+                guard let f = free else { return }
+
+                let wasLow = self.vramLow
+                if !wasLow, f < Self.vramLowBytes { self.vramLow = true }
+                else if wasLow, f > Self.vramRecoverBytes { self.vramLow = false }
+
+                // 模式翻转 → 轮询间隔跟着变，重排定时器
+                if self.vramLow != wasLow, self.timer != nil { self.startPolling() }
+            }
+        }
+    }
+
+    /// 解析 `ioreg -r -c IOAccelerator -d 1 -w 0`。
+    ///
+    /// 一台机器可能有多块加速器（核显 + 独显）。**取「总容量最大」的那块**，
+    /// 也就是 Lightroom / 游戏真正在用的独显 —— 不能取「剩余最少」，
+    /// 否则核显那点显存会天天误报告急。
+    private func readVRAM() -> (free: Int64?, total: Int64?) {
+        let r = run("/usr/sbin/ioreg", ["-r", "-c", "IOAccelerator", "-d", "1", "-w", "0"])
+        guard r.code == 0, !r.out.isEmpty else { return (nil, nil) }
+
+        func num(_ s: String, _ key: String) -> Int64? {
+            guard let rng = s.range(of: "\"\(key)\"=") else { return nil }
+            let digits = s[rng.upperBound...].prefix { $0.isNumber }
+            return digits.isEmpty ? nil : Int64(digits)
+        }
+
+        // **按节点切块**再各取各的，不能按出现顺序配对 ——
+        // ioreg 里 `vramFreeBytes` 排在 `inUseVidMemoryBytes` **之后**，
+        // 而且同一个节点的统计还会重复输出一遍。顺序配对必然错位。
+        var devices: [(free: Int64, used: Int64)] = []
+        for block in r.out.components(separatedBy: "\n+-o ") {
+            guard let free = num(block, "vramFreeBytes") else { continue }
+            let used = (num(block, "inUseVidMemoryBytes") ?? 0)
+                     + (num(block, "orphanedReusableVidMemoryBytes") ?? 0)
+                     + (num(block, "orphanedNonReusableVidMemoryBytes") ?? 0)
+            devices.append((free, used))
+        }
+
+        guard let dev = devices.max(by: { ($0.free + $0.used) < ($1.free + $1.used) }) else {
+            return (nil, nil)
+        }
+        // 总量 = 剩余 + 占用。驱动还有少量保留未计入，所以略小于物理显存，算占用率够用
+        let total = dev.free + dev.used
+        return (dev.free, total > 0 ? total : nil)
     }
 
     // MARK: 进程调用
@@ -516,6 +672,7 @@ final class FanController: ObservableObject {
     private func ingest(_ snap: Snapshot) {
         let firstLoad = snapshot == nil
         snapshot = snap
+        refreshSensorChoices(from: snap)
         if firstLoad {
             // 默认勾选：有测速且在转的风扇，排除水泵
             let live = snap.fans.filter { $0.ch != snap.pumpChannel && $0.rpm > 0 }.map(\.ch)
@@ -527,6 +684,27 @@ final class FanController: ObservableObject {
             }
         }
         message = ""
+    }
+
+    /// 换机器、换 kext、或 SMP 核心数变化后，可用传感器会变，候选列表跟着重建。
+    /// 用户已选的那组只要仍然存在就保持不变 —— 按 key 集合匹配，不按数组下标，
+    /// 否则「封装」在列表里的位置一变，选择就会莫名其妙跳到别处。
+    private func refreshSensorChoices(from snap: Snapshot) {
+        let keys = Set(snap.sensors.map(\.key))
+
+        let cpu = SensorChoice.cpuChoices(available: keys)
+        if cpu.map(\.id) != cpuChoices.map(\.id) {
+            let keep = cpuChoice.id
+            cpuChoices = cpu
+            cpuChoice = cpu.first { $0.id == keep } ?? cpu[0]
+        }
+
+        let gpu = SensorChoice.gpuChoices(available: keys)
+        if gpu.map(\.id) != gpuChoices.map(\.id) {
+            let keep = gpuChoice.id
+            gpuChoices = gpu
+            gpuChoice = gpu.first { $0.id == keep } ?? gpu[0]
+        }
     }
 
     private func ingest(_ s: SysInfo) {
@@ -543,8 +721,11 @@ final class FanController: ObservableObject {
         }
         lastNet = (s.net.iface, s.net.in, s.net.out, now)
 
-        // CPU 走势
-        cpuHistory.append(s.cpu.total)
+        // CPU 走势。**必须挡住 NaN/∞** —— `helper` 偶尔会在采样窗口没采满时
+        // 吐出 "nan"，一旦进了数组就会一路传进 Path 的坐标里，
+        // CoreGraphics 拿到 NaN 是未定义行为，正是这类崩溃的经典入口。
+        let pct = s.cpu.total.isFinite ? min(max(s.cpu.total, 0), 100) : 0
+        cpuHistory.append(pct)
         if cpuHistory.count > 90 { cpuHistory.removeFirst(cpuHistory.count - 90) }
     }
 
@@ -791,23 +972,81 @@ struct SensorChoice: Identifiable, Hashable {
     /// 写进 gpufand 配置的形式： KEY[,KEY...]
     var keyString: String { keys.joined(separator: ",") }
 
-    /// CPU 默认用 8 个核心传感器 —— 它们平滑；
+    /// 首次采样之前用的占位：没有任何键，界面显示「—」。
+    ///
+    /// **不要拿一个真实键充当占位。** 之前 `cpuChoice` 初值是
+    /// `cpuChoices(available: [])[0]`，也就是 `["TC0P"]`；等真实传感器列表刷新上来，
+    /// 「保留原选择」按 key 匹配，`TC0P` 正好命中「封装」——默认项就被顶成了封装，
+    /// 核心那组反而选不中。占位的 id 是空串，永远匹配不上，刷新时自然落回第一项。
+    static let placeholder = SensorChoice(keys: [], short: "—", label: "")
+
+    /// CPU 默认用**核心**传感器 —— 它们平滑；
     /// TC0P/TC0D 是封装/晶片，会随睿频瞬时冲高（实测 33→65→35°C 来回跳），
     /// 直接拿来控速会让风扇几秒内反复拉高又降下来，很吵。
-    static let cpuChoices: [SensorChoice] = [
-        .init(keys: ["TC0C", "TC1C", "TC2C", "TC3C", "TC4C", "TC5C", "TC6C", "TC7C"],
-              short: L.sensorCPU8Cores,
-              label: L.sensorCPU8CoresLabel),
-        .init(keys: ["TC0P"],
-              short: L.sensorCPUPackage,
-              label: L.sensorCPUPackageLabel),
-    ]
-    static let gpuChoices: [SensorChoice] = [
-        .init(keys: ["TG0D", "TG0P"],
-              short: L.sensorGPUEdge,
-              label: L.sensorGPUEdgeLabel),
-        .init(keys: ["TG0D"],
-              short: L.sensorGPUCore,
-              label: L.sensorGPUCoreLabel),
-    ]
+    ///
+    /// **键必须按机器实际暴露的来。** 以前这里写死 `TC0C…TC7C` 八个键，
+    /// 换一台核心数不是 8 的机器就会带上不存在的键。守护进程本身是安全的
+    /// （`gpufand.c` 校验阶段会把不存在的键剔掉、并打一行 "not present, ignored"），
+    /// 但配置里留着一堆废键、按钮上还写着「8 核心」，都是错的。
+    /// 现在从 `snapshot.sensors` 动态生成，机器有几个核心就列几个。
+    static func cpuChoices(available: Set<String>) -> [SensorChoice] {
+        var out: [SensorChoice] = []
+
+        let cores = coreKeys(available: available)
+        if !cores.isEmpty {
+            out.append(.init(keys: cores,
+                             short: L.sensorCPUCores(cores.count),
+                             label: L.sensorCPUCoresLabel(cores.count)))
+        }
+        if available.contains("TC0P") {
+            out.append(.init(keys: ["TC0P"],
+                             short: L.sensorCPUPackage,
+                             label: L.sensorCPUPackageLabel))
+        }
+        // 两种都没有（没装 SMCSuperIO、或键名不是这套）时留一个占位，
+        // 让界面至少能显示「—」，而不是整块消失。
+        if out.isEmpty {
+            out.append(.init(keys: ["TC0P"],
+                             short: L.sensorCPUPackage,
+                             label: L.sensorCPUPackageLabel))
+        }
+        return out
+    }
+
+    static func gpuChoices(available: Set<String>) -> [SensorChoice] {
+        var out: [SensorChoice] = []
+        let hasD = available.contains("TG0D"), hasP = available.contains("TG0P")
+        if hasD && hasP {
+            out.append(.init(keys: ["TG0D", "TG0P"],
+                             short: L.sensorGPUEdge,
+                             label: L.sensorGPUEdgeLabel))
+        }
+        if hasD {
+            out.append(.init(keys: ["TG0D"],
+                             short: L.sensorGPUCore,
+                             label: L.sensorGPUCoreLabel))
+        } else if hasP {
+            out.append(.init(keys: ["TG0P"],
+                             short: L.sensorGPUCore,
+                             label: L.sensorGPUCoreLabel))
+        }
+        if out.isEmpty {
+            // 无驱动显卡（macOS 下的 NVIDIA）不会暴露 TG0x，保留占位让界面结构稳定
+            out.append(.init(keys: ["TG0D"],
+                             short: L.sensorGPUCore,
+                             label: L.sensorGPUCoreLabel))
+        }
+        return out
+    }
+
+    /// 机器实际暴露的核心键，按序号排序（`TC10C` 要排在 `TC9C` 之后，不能按字符串排）。
+    static func coreKeys(available: Set<String>) -> [String] {
+        available.compactMap { k -> (Int, String)? in
+            guard k.hasPrefix("TC"), k.hasSuffix("C") else { return nil }
+            guard let n = Int(k.dropFirst(2).dropLast()) else { return nil }
+            return (n, k)
+        }
+        .sorted { $0.0 < $1.0 }
+        .map(\.1)
+    }
 }

@@ -124,9 +124,11 @@ struct LTable {
 
     // MARK: 温度来源
 
-    var sensorCPU8Cores: String { zh ? "8 核心" : "8 cores" }
-    var sensorCPU8CoresLabel: String {
-        zh ? "CPU 8 个核心，取最热 —— 平滑，推荐" : "CPU's 8 cores, hottest wins — smooth, recommended"
+    /// 核心数按机器实际暴露的来，所以是函数而不是常量。
+    func sensorCPUCores(_ n: Int) -> String { zh ? "\(n) 核心" : (n == 1 ? "1 core" : "\(n) cores") }
+    func sensorCPUCoresLabel(_ n: Int) -> String {
+        zh ? "CPU 全部 \(n) 个核心，取最热 —— 平滑，推荐"
+           : "All \(n) CPU cores, hottest wins — smooth, recommended"
     }
     var sensorCPUPackage: String { zh ? "封装" : "Package" }
     var sensorCPUPackageLabel: String {
@@ -155,9 +157,10 @@ struct LTable {
     var panelSection: String { zh ? "显示面板" : "Panels" }
     var showAll: String { zh ? "全部显示" : "Show all" }
     var hideAll: String { zh ? "全部隐藏" : "Hide all" }
-    var panelSectionHint: String {
-        zh ? "开关会记住，下次打开保持原样。监控页刷新间隔 2 秒。"
-           : "Your choices are remembered. The monitor page refreshes every 2 seconds."
+    func panelSectionHint(_ sec: Double) -> String {
+        let t = String(format: "%.0f", sec)
+        return zh ? "开关会记住，下次打开保持原样。监控页每 \(t) 秒刷新。"
+                  : "Your choices are remembered. The monitor page refreshes every \(t) s."
     }
 
     var dutyCurveSection: String { zh ? "温度 → 占空比 曲线" : "Temperature → duty curve" }
@@ -174,7 +177,10 @@ struct LTable {
            : "In manual mode each fan's slider sets a fixed duty directly — it won't follow temperature."
     }
     var fanChannelSection: String { zh ? "风扇通道" : "Fan channels" }
-    var fanChannelHint: String { zh ? "水泵通道已锁定 · 每 2 秒刷新" : "Pump channel locked · refreshes every 2s" }
+    func fanChannelHint(_ sec: Double) -> String {
+        let t = String(format: "%.0f", sec)
+        return zh ? "水泵通道已锁定 · 每 \(t) 秒刷新" : "Pump channel locked · refreshes every \(t)s"
+    }
 
     var overviewSection: String { zh ? "运行概览" : "Overview" }
     var overviewMore: String { zh ? "完整数据见左栏「监控」页" : "Full details on the Monitor page" }
@@ -349,6 +355,34 @@ struct LTable {
     func logOK(_ ch: Int, _ d: Int) -> String { zh ? "ch\(ch) -> \(d)% ok" : "ch\(ch) -> \(d)% ok" }
     func logFail(_ ch: Int, _ d: Int) -> String { zh ? "ch\(ch) -> \(d)% 失败" : "ch\(ch) -> \(d)% failed" }
     func gpuFanExtra(_ rpm: Double) -> String { zh ? String(format: "· %.0f RPM", rpm) : String(format: "· %.0f RPM", rpm) }
+    /// 说明卡底部的版本行，例如「版本 v1.5.1（构建 17）」。
+    func versionLine(_ v: String, _ b: String) -> String {
+        if b.isEmpty { return zh ? "版本 v\(v)" : "Version v\(v)" }
+        return zh ? "版本 v\(v)（构建 \(b)）" : "Version v\(v) (build \(b))"
+    }
+
+    // MARK: 显存 / 性能
+
+    /// 走势图在显存告急时停画，占位块上写这一句
+    var chartPaused: String { zh ? "已暂停" : "Paused" }
+    var vramLowTitle: String { zh ? "显存告急 · 图表已暂停重绘" : "VRAM nearly exhausted · charts paused" }
+    func vramLowBody(freeMB: Int64, ratio: Double?) -> String {
+        let used = ratio.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
+        return zh
+            ? "剩余 \(freeMB) MB，已占用 \(used)。别的程序抢不到显存会崩，建议先退出或重启 Lightroom，再点「重读」。"
+            : "\(freeMB) MB free, \(used) in use. Other apps can crash when they can't allocate — quit or restart Lightroom, then hit Refresh."
+    }
+
+    var performanceSection: String { zh ? "性能" : "Performance" }
+    var pollIntervalLabel: String { zh ? "刷新间隔" : "Refresh interval" }
+    func pollIntervalValue(_ s: Double) -> String {
+        String(format: zh ? "%.0f 秒" : "%.0f s", s)
+    }
+    var pollIntervalHint: String {
+        zh ? "间隔越短，面板刷新越勤，显存紧张时越容易出问题。显存低于 1 GB 时自动降到 8 秒。"
+           : "Shorter intervals refresh more often — and allocate more GPU surfaces. Falls back to 8 s below 1 GB free VRAM."
+    }
+    var vramLabel: String { zh ? "显存" : "VRAM" }
 
     /// 秒 → 「3.4 小时」/「3.4 hours」。格式串本身两边就不一样，所以是三个函数。
     func days(_ v: Double) -> String { zh ? String(format: "%.1f 天", v) : String(format: "%.1f days", v) }
